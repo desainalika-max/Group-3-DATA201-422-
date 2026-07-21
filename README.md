@@ -1,7 +1,7 @@
 # Data Divas
----
 
-# Team
+
+## Team
 - Sudheesh
 - Nalika
 - Dian Qiu
