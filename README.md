@@ -1,1 +1,8 @@
-# Group-3-DATA201-422-
+# Data Divas
+
+
+## Team
+- Sudheesh
+- Nalika
+- Dian Qiu
+- Agar
