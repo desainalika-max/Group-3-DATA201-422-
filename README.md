@@ -31,3 +31,19 @@
 | **availability_365** | Days available for booking in the next year |
 | **number_of_reviews_ltm** | Reviews received in the last 12 months |
 | **license** | Registration/license number, if applicable |
+
+## Snapshot Date & "Days Since Last Review"
+
+The dataset is a **snapshot of Airbnb listings taken on 22 June 2026** — this is the scrape date.
+
+To calculate how long ago a listing's last review was, we count backwards from the snapshot date:
+
+### Why the snapshot date matters
+
+- **Initial issue:** the snapshot date was first set to `13 June`, but the dataset actually contains reviews dated up to `22 June`. Any review after `13 June` (e.g. `16 June`) produced a **negative** result:
+
+- This happened because we were measuring backwards from a date that hadn't occurred yet relative to some reviews.
+
+- **Fix:** setting the snapshot date to `22 June` — the true scrape date — ensures every review falls on or before that date, so all `days_ago` values come out zero or positive.
+
+- **Why 22 June is correct:** it matches the most recent review date found in the dataset, confirming it as the actual day the scrape occurred.
