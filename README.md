@@ -34,7 +34,7 @@
 
 ## Snapshot Date & "Days Since Last Review"
 
-The dataset is a **snapshot of Airbnb listings taken on 22 June 2026** — this is the scrape date.
+The dataset is a **snapshot of Airbnb listings taken on 22 June 2026** this is the scrape date.
 
 To calculate how long ago a listing's last review was, we count backwards from the snapshot date:
 
@@ -44,6 +44,6 @@ To calculate how long ago a listing's last review was, we count backwards from t
 
 - This happened because we were measuring backwards from a date that hadn't occurred yet relative to some reviews.
 
-- **Fix:** setting the snapshot date to `22 June` — the true scrape date — ensures every review falls on or before that date, so all `days_ago` values come out zero or positive.
+- **Fix:** setting the snapshot date to `22 June` (the true scrape date) ensures every review falls on or before that date, so all `days_ago` values come out zero or positive.
 
 - **Why 22 June is correct:** it matches the most recent review date found in the dataset, confirming it as the actual day the scrape occurred.
