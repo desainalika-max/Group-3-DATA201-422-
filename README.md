@@ -48,88 +48,49 @@ To calculate how long ago a listing's last review was, we count backwards from t
 
 - **Why 22 June is correct:** it matches the most recent review date found in the dataset, confirming it as the actual day the scrape occurred.
 
-## Deliverable 4
+## Deliverable 4 — Cleaning the Airbnb Listings
 
-### Datasets
+**Source:** Deliverable 3 concatenated panel, Inside Airbnb, Christchurch, Oct 2025 – Jun 2026
+**Cleaning script:** `clean_christchurch_panel.Rmd`
+**Output:** `Christchurch Oct2025 to Jun2026 (cleaned).csv`
 
-#### 1. Christchurch Airbnb Listings
-**Source:** Inside Airbnb, concatenated across Oct 2025 – Jun 2026 (Deliverable 3)
-**File:** `Deliverable 4/data/raw/chch_listings_raw.csv` (not tracked in git — see Setup below)
-**Cleaning script:** `Deliverable 4/clean_listings.Rmd`
+### Column changes
 
-**Known limitation:** `price` is 100% missing for Dec 2025, Jan 2026, and Feb 2026 in the source file — confirmed against the raw Inside Airbnb monthly file, not introduced by our Deliverable 3 concatenation. This affects 10,667 of 28,795 rows (37%). We flag these rows with `price_missing` rather than dropping them, since dropping would remove an entire quarter's supply data.
+| Column | Change | Reason |
+| --- | --- | --- |
+| `id`, `host_id` | Read as character, not numeric | The largest `id` is 17 digits. A double only holds ~15 significant digits reliably, so reading these as numbers would silently corrupt the last few. They're labels, never used in arithmetic. |
+| `license` | Dropped | 100% missing across all 28,795 rows |
+| `month_year` | Converted to an ordered factor | As plain text, months sort alphabetically (April, August, December...), which breaks every grouped summary and chart. An explicit factor order fixes this. |
+| `month_date` | Added | A real `Date` column alongside `month_year`, so month arithmetic and time-series joins work correctly. `month_year` stays as the display-order version. |
+| `last_review` | Parsed to `Date` | Was read in as text |
+| `reviews_per_month` | Missing values set to 0 | All 2,627 missing values belong to listings with `number_of_reviews == 0`. This is a structural zero, not a data gap — a listing with no reviews genuinely has 0 reviews per month. Imputing a market average would invent activity that never happened. `last_review` is left as `NA` for these rows, since there's no correct date to put there. |
+| `host_name` | Filled within host, then labelled "Unknown" | One row was missing a host name. The same `host_id` appears 9 times and is named in the other 8, so the value is recovered with certainty rather than guessed. Any remaining true unknowns are labelled `"Unknown"` rather than left blank. |
+| `minimum_nights` | Carried forward within listing as `minimum_nights_filled`; original kept | 37 gaps, each with a value present in an adjacent month for the same listing. Minimum nights is a host-set rule, not a market outcome, and changes rarely — carrying it forward is safer than imputing. The raw `minimum_nights` column is kept unchanged alongside the filled version. |
+| `price` | Imputed via kNN as `price_imputed`; original kept | See below |
+| `months_present`, `in_all_9_months` | Added | Only 2,338 of 4,117 listings appear in all nine monthly snapshots. Any month-over-month price comparison should either filter to `in_all_9_months` or explicitly note that it doesn't, otherwise real price movement gets mixed up with listings simply entering or leaving the panel. |
+| `long_stay` | Added | Flags the 129 rows requiring 30+ nights minimum stay — a different market to nightly tourist rental, worth excluding from tourist-price analysis. |
+| `name` | Whitespace trimmed | Minor cleanup, no rows affected structurally |
 
-**Columns kept / added**
-| Column | Description |
-| --- | --- |
-| **id** | Unique identifier for the listing |
-| **host_id** | Unique identifier for the host |
-| **neighbourhood** | Christchurch City ward |
-| **latitude** / **longitude** | Geographic coordinates, used for SA2 spatial join in Deliverable 5 |
-| **room_type** | Entire home/apt, Private room, Shared room, or Hotel room |
-| **price** | Nightly price (NZD); 37% missing, see limitation above |
-| **minimum_nights** | Minimum stay required |
-| **number_of_reviews_ltm** | Reviews received in the last 12 months |
-| **reviews_per_month** | Average review frequency |
-| **last_review** | Date of most recent review |
-| **calculated_host_listings_count** | Number of listings this host manages |
-| **availability_365** | Days available for booking in the next year |
-| **month_year** | Scrape month, parsed from source (day-first) |
-| **month_label** | `YYYY-MM` |
-| **quarter** | `YYYYQ#`, matches bond dataset `TimeFrame` format |
-| **price_missing** | TRUE where `price` is NA |
-| **bedrooms_est** | Bedroom count extracted from `name` where mentioned (~12% coverage); indicative only |
+### Price: the one column that needed a real imputation decision
 
-**Columns dropped**
-| Column | Reason |
-| --- | --- |
-| **license** | 100% missing |
-| **neighbourhood_group** | Single constant value ("Christchurch City") |
-| **host_name** | Personal data, no analytical use |
-| **name** | Free text, mined for `bedrooms_est` then dropped |
+Two distinct missingness problems were found:
 
----
+- **December 2025, January 2026 and February 2026 have no observed prices at all** — the entire column is blank in those three months, not a sample of missing values. Confirmed against the raw Inside Airbnb monthly file for December, so this is a source limitation, not something introduced by the Deliverable 3 concatenation.
+- **The other six months are 5–8% missing**, and this missingness is not random: among rows with a price, 0.5% have zero availability; among rows missing a price, 62% do. Inside Airbnb derives price from the booking calendar, so a listing with no available nights simply has no price to report.
 
-#### 2. Tenancy Services Rental Bond Data
-**Source:** [Tenancy Services — Rental bond data](https://www.tenancy.govt.nz/about-tenancy-services/data-and-statistics/rental-bond-data/), Detailed quarterly report, Jan 2020 – Apr 2026
-**File:** `Deliverable 4/data/raw/bond_raw.csv` (not tracked in git — each team member downloads their own copy)
-**License:** Creative Commons Attribution 3.0 NZ, credited to the Ministry of Business, Innovation and Employment
-**Cleaning script:** `Deliverable 4/clean_bonds.Rmd`
+**Decision:** the team used **kNN imputation** (`VIM::kNN`, k = 10) to fill missing prices, matching each listing to its 10 nearest neighbours on room type, coordinates, minimum nights, host listing count, and month. Because December–February have no observed prices at all within those months, values for that stretch are drawn from listings in other months. 27 implausible prices (above $2,000/night) were also treated as missing before imputation.
 
-Data comes from Tenancy Services' bond database, covering private-sector bonds lodged each month, listed by tenancy start date, using SA2-2019 area definitions from Statistics NZ. Fixed random rounding to base 3 and suppression of results under 5 bonds is applied by MBIE before release. Recent quarters are provisional due to an ongoing bond-system migration and may not be directly comparable with earlier periods.
+The original `price` column is kept unchanged. `price_imputed` holds the filled version. `price_was_imputed` flags every row that differs from the original, so any analysis can filter to observed-only prices if preferred.
 
-**Column Descriptions**
-| Column | Description |
-| --- | --- |
-| **TimeFrame** | Quarter start date, based on tenancy start date |
-| **Location Id** | SA2-2019 area code (Statistics NZ) |
-| **Dwelling Type** | House / Apartment / Flat / Room / Boarding House / ALL |
-| **Number Of Beds** | 0–9, "5+", or "ALL" (rollup) |
-| **Total Bonds** | Bonds lodged in the group |
-| **Active Bonds** | Still ongoing |
-| **Closed Bonds** | Ended |
-| **Median Rent** | Weekly rent, median |
-| **Geometric Mean Rent** | Median substitute — avoids the plateauing effect of rents clustering at round numbers |
-| **Upper Quartile Rent** / **Lower Quartile Rent** | Synthetic 75th/25th percentile, assumes log-normal distribution |
-| **Log Std Dev Weekly Rent** | Spread of the log-rent distribution |
-| **rent_suppressed** | **Added.** TRUE where rent measures are NA due to MBIE's <5-bond suppression rule |
+### Known limitations
 
-**Cleaning decisions**
-- **Location filter:** restricted to Christchurch City SA2 codes, using the Stats NZ SA2-2019-to-Territorial-Authority concordance. This removes the dataset's non-geographic rollup rows (`Location Id` = -99 or blank) as a side effect.
-- **Dwelling Type:** collapsed to `"ALL"` only. Bond `Dwelling Type` describes building type, which has no consistent counterpart in the Airbnb `room_type` field, so keeping the breakdown would not support a valid comparison next week.
-- **Number Of Beds:** kept at the specific level (1, 2, 3, 4, 5+), since it aligns directly with `bedrooms_est` in the Airbnb dataset.
-- **Missing rent:** flagged with `rent_suppressed` rather than dropped. Only 9 rows within Christchurch are genuinely suppressed; they still carry valid `Total Bonds` counts.
-- **Timeframe filter:** restricted to `2025-10-01`, `2026-01-01`, `2026-04-01`, matching the Airbnb coverage of Oct 2025 – Jun 2026 exactly.
+1. December 2025 – February 2026 have no observed prices, so imputed values in that window are the least reliable in the dataset.
+2. kNN was chosen as a first approach; other imputation methods haven't been tested and may give different results.
+3. Imputation uncertainty isn't carried through, so any standard errors computed on `price_imputed` will be slightly too small.
+4. Only 2,338 of 4,117 listings appear in all nine months — unbalanced panel, see `in_all_9_months`.
 
----
+### How to use the output
 
-### Setup — reproducing this on another machine
-
-Raw data files are excluded from git (see `.gitignore`) to keep the repository small. To rerun the pipeline:
-
-1. Clone the repo
-2. Place the Deliverable 3 concatenated CSV at `Deliverable 4/data/raw/chch_listings_raw.csv`
-3. Download the Tenancy Services "Detailed quarterly report" CSV from the link above and place it at `Deliverable 4/data/raw/bond_raw.csv`
-4. Open `Deliverable 4/Deliverable 4.Rproj` in RStudio
-5. Knit `clean_listings.Rmd`, then `clean_bonds.Rmd`
-6. Cleaned outputs are written to `Deliverable 4/data/clean/`
+- **Observed prices only:** filter `price_was_imputed == FALSE`
+- **Balanced month-over-month comparisons:** filter `in_all_9_months == TRUE`
+- **Tourist-market pricing:** exclude `long_stay == TRUE`
