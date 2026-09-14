@@ -1,0 +1,282 @@
+---
+title: "Cleaning and Imputing the Christchurch Airbnb Panel"
+subtitle: "Inside Airbnb listings, October 2025 - June 2026"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(VIM)
+```
+
+# 1. Read the data
+
+```{r paths}
+# This Rmd sits in .../Group-3-DATA201-422-/data/clean, so "." is that folder.
+# Knitting sets the working directory to the Rmd's own location.
+data_dir <- "."
+
+# If you run the chunks in the console instead of knitting, uncomment this:
+# data_dir <- "C:/Users/dianq/OneDrive/Desktop/Data Wrangling/Group-3-DATA201-422-/data/clean"
+
+in_file  <- file.path(data_dir, "Christchurch Oct2025 to Jun2026 (combined).csv")
+out_file <- file.path(data_dir, "Christchurch Oct2025 to Jun2026 (cleaned).csv")
+
+file.exists(in_file)
+```
+
+```{r read}
+airbnb <- read_csv(
+  in_file,
+  col_types = cols(id = col_character(), host_id = col_character(), .default = col_guess())
+)
+
+dim(airbnb)
+```
+
+**Why character IDs.** The largest `id` is 1,709,885,808,209,520,396. A double holds
+about 15 significant digits, so reading these as numbers silently corrupts the last few.
+They are labels, never arithmetic, so character is the correct type. This is the same
+issue that produced the type mismatch in the KNIME workflow.
+
+# 2. Drop the empty column
+
+```{r drop}
+sum(is.na(airbnb$license))
+
+airbnb <- airbnb %>% select(-license)
+```
+
+`license` is `NA` in all 28,795 rows. A column with zero observed values cannot
+inform anything and only adds noise to the missing-value summary.
+
+`neighbourhood_group` is kept even though it is the constant `"Christchurch City"`,
+
+# 3. Month as an ordered factor and a real date
+
+```{r month}
+month_levels <- c("October 2025", "November 2025", "December 2025",
+                  "January 2026", "February 2026", "March 2026",
+                  "April 2026", "May 2026", "June 2026")
+
+airbnb <- airbnb %>%
+  mutate(month_date = case_when(
+    month_year == "October 2025"  ~ as.Date("2025-10-01"),
+    month_year == "November 2025" ~ as.Date("2025-11-01"),
+    month_year == "December 2025" ~ as.Date("2025-12-01"),
+    month_year == "January 2026"  ~ as.Date("2026-01-01"),
+    month_year == "February 2026" ~ as.Date("2026-02-01"),
+    month_year == "March 2026"    ~ as.Date("2026-03-01"),
+    month_year == "April 2026"    ~ as.Date("2026-04-01"),
+    month_year == "May 2026"      ~ as.Date("2026-05-01"),
+    month_year == "June 2026"     ~ as.Date("2026-06-01")
+  )) %>%
+  mutate(month_year = factor(month_year, levels = month_levels, ordered = TRUE))
+
+table(airbnb$month_year)
+```
+
+As plain text the months sort alphabetically, so every grouped summary and
+every x-axis came out April, August, December, February. The ordered factor fixes
+plotting and grouping; `month_date` allows arithmetic and correct time-series joins.
+
+# 4. Dates
+
+```{r dates}
+airbnb <- airbnb %>% mutate(last_review = as.Date(last_review))
+range(airbnb$last_review, na.rm = TRUE)
+```
+
+
+# 5. Reviews for listings that have none
+
+```{r reviews}
+sum(airbnb$number_of_reviews == 0 & is.na(airbnb$reviews_per_month))
+
+airbnb <- airbnb %>%
+  mutate(reviews_per_month = ifelse(number_of_reviews == 0, 0, reviews_per_month))
+```
+
+**Why 0 rather than imputation.** All 2,627 missing values sit on listings with
+`number_of_reviews == 0`. This is a structural blank, not a collection failure: a
+listing with no reviews genuinely receives 0 reviews per month. Imputing a market
+average would invent review activity that never happened.
+
+**Why `last_review` stays `NA`.** There is no correct date to insert. A never-reviewed
+listing has no last review, and any placeholder would corrupt days-since-review.
+
+# 6. Host name
+
+```{r host}
+airbnb <- airbnb %>%
+  arrange(host_id, month_date) %>%
+  group_by(host_id) %>%
+  fill(host_name, .direction = "downup") %>%
+  ungroup() %>%
+  mutate(host_name = ifelse(is.na(host_name), "Unknown", host_name))
+
+sum(is.na(airbnb$host_name))
+```
+
+**Why.** One row was missing a host name. That `host_id` appears 9 times overall and is
+named in the other 8, so the value is recovered with certainty rather than guessed.
+
+# 7. Minimum nights
+
+```{r minnights}
+airbnb <- airbnb %>%
+  arrange(id, month_date) %>%
+  group_by(id) %>%
+  mutate(minimum_nights_filled = minimum_nights) %>%
+  fill(minimum_nights_filled, .direction = "downup") %>%
+  ungroup() %>%
+  mutate(minimum_nights_was_filled = is.na(minimum_nights) & !is.na(minimum_nights_filled))
+
+sum(airbnb$minimum_nights_was_filled)
+```
+
+**Why carry rather than impute.** `minimum_nights` is a booking rule the host sets, not
+a market outcome. It changes rarely, and all 37 gaps had a value from the same listing
+in an adjacent month. The original column is kept alongside.
+
+# 8. Price
+
+Price is the only column needing a real imputation decision.
+
+## 8.1 What the missingness looks like
+
+```{r price-diagnose}
+airbnb %>%
+  group_by(month_year) %>%
+  summarise(rows = n(), price_observed = sum(!is.na(price)),
+            pct_missing = round(mean(is.na(price)) * 100, 1))
+```
+
+Two distinct problems:
+
+* **December 2025, January 2026 and February 2026 have no prices at all.** Not a sample
+  of missing values, the entire column is blank in those three snapshots.
+* **The other six months are 5-8% missing**, scattered across listings.
+
+## 8.2 The scattered gaps are not missing at random
+
+```{r mnar}
+airbnb %>%
+  filter(!month_year %in% c("December 2025", "January 2026", "February 2026")) %>%
+  group_by(price_missing = is.na(price)) %>%
+  summarise(rows = n(),
+            pct_zero_availability = round(mean(availability_365 == 0) * 100, 1))
+```
+
+Among rows with a price, 0.5% have zero availability. Among rows missing a price, 62%
+do. Inside Airbnb derives price from the booking calendar, so a listing with no
+available nights has no price to report.
+
+## 8.3 Our approach
+
+We discussed this as a group and decided to use kNN imputation for the missing prices.
+It is one method among several, and we may test other approaches later to compare the
+results.
+
+kNN fills each missing price using the most similar listings, judged on room type,
+location, minimum nights and how many listings the host runs. Month is included so
+same-month listings are preferred as neighbours. Because December to February contain no
+prices at all, values for those months are drawn from listings in other months.
+
+```{r price-knn}
+set.seed(2026)
+
+airbnb <- airbnb %>%
+  mutate(price_imputed = ifelse(price > 2000, NA, price))   # 27 impossible values
+
+airbnb <- kNN(airbnb,
+              variable = "price_imputed",
+              dist_var = c("room_type", "latitude", "longitude",
+                           "minimum_nights_filled",
+                           "calculated_host_listings_count", "month_year"),
+              k = 10, imp_var = FALSE)
+
+airbnb <- airbnb %>%
+  mutate(price_was_imputed = is.na(price) | price > 2000)
+
+sum(airbnb$price_was_imputed)
+sum(is.na(airbnb$price_imputed))
+```
+
+The original `price` column is kept unchanged, `price_imputed` holds the filled version,
+and `price_was_imputed` marks which rows differ.
+
+```{r price-check}
+airbnb %>%
+  group_by(month_year) %>%
+  summarise(rows = n(),
+            observed = sum(!is.na(price)),
+            imputed  = sum(price_was_imputed),
+            median_price = round(median(price_imputed), 0))
+```
+
+# 9. Panel structure and remaining flags
+
+```{r panel}
+airbnb <- airbnb %>%
+  group_by(id) %>%
+  mutate(months_present = n_distinct(month_year)) %>%
+  ungroup() %>%
+  mutate(in_all_9_months = months_present == 9,
+         long_stay = minimum_nights_filled >= 30,
+         name = trimws(name))
+
+table(airbnb$months_present)
+```
+
+**Why this matters.** Only 2,338 of 4,117 listings appear in all nine snapshots, so an
+unbalanced panel mixes real price movement with listings entering and leaving. Any
+month-over-month comparison should either use `in_all_9_months` or state that it does not.
+
+`long_stay` marks the 129 rows requiring 30 or more nights. These are a different market
+to nightly rental and are worth excluding from tourist-price analysis.
+
+# 10. Validation
+
+```{r checks}
+sum(duplicated(airbnb[, c("id", "month_year")]))   # expect 0
+range(airbnb$latitude)
+range(airbnb$longitude)
+colSums(is.na(airbnb))
+```
+
+Coordinates fall between -43.87 and -43.42 latitude and 172.43 to 173.10 longitude,
+which is Christchurch City including Banks Peninsula. No stray points.
+
+# 11. How to use the output
+
+* **Observed prices only** - filter `price_was_imputed == FALSE`.
+* **Balanced comparisons** - filter `in_all_9_months`.
+* **Month-over-month price comparisons** - note that prices before December 2025 and
+  after February 2026 sit at noticeably different levels, so the two periods are not
+  directly comparable.
+
+# 12. Known limitations
+
+1. December 2025 to February 2026 contain no observed prices, so those values are the
+   least reliable in the dataset.
+2. kNN was chosen as a first approach. Other imputation methods have not been tested yet
+   and may give different results.
+3. Imputation uncertainty is not carried through, so standard errors computed on
+   `price_imputed` will be slightly too small.
+
+# 13. Save
+
+```{r save}
+airbnb <- airbnb %>% arrange(month_date, id)
+write_csv(airbnb, out_file)
+
+out_file
+nrow(airbnb)
+```
