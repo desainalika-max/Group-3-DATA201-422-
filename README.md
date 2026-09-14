@@ -48,7 +48,7 @@ To calculate how long ago a listing's last review was, we count backwards from t
 
 - **Why 22 June is correct:** it matches the most recent review date found in the dataset, confirming it as the actual day the scrape occurred.
 
-## Deliverable 4 - Cleaning the Airbnb Listings
+## Cleaning the Airbnb Listings
 
 **Source:** Deliverable 3 concatenated panel, Inside Airbnb, Christchurch, Oct 2025 – Jun 2026
 **Cleaning script:** `clean_christchurch_panel.Rmd`
@@ -94,3 +94,48 @@ The original `price` column is kept unchanged. `price_imputed` holds the filled 
 - **Observed prices only:** filter `price_was_imputed == FALSE`
 - **Balanced month-over-month comparisons:** filter `in_all_9_months == TRUE`
 - **Tourist-market pricing:** exclude `long_stay == TRUE`
+
+
+## Cleaning the Bond Dataset
+
+**Source:** [Tenancy Services — Rental bond data](https://www.tenancy.govt.nz/about-tenancy-services/data-and-statistics/rental-bond-data/), Detailed quarterly report, Jan 2020 – Apr 2026
+**License:** Creative Commons Attribution 3.0 NZ, credited to the Ministry of Business, Innovation and Employment
+**Cleaning script:** `bond_listing_clean.Rmd`
+**Output:** `Bond Data Quarterly (cleaned).csv`
+
+Data comes from Tenancy Services' bond database, covering private-sector bonds lodged each month, listed by tenancy start date, using SA2-2019 area definitions from Statistics NZ. Fixed random rounding to base 3 and suppression of results under 5 bonds is applied by MBIE before release. Recent quarters are provisional due to an ongoing bond-system migration and may not be directly comparable with earlier periods.
+
+### Column Descriptions
+
+| Column | Description |
+| --- | --- |
+| **TimeFrame** | Quarter start date, based on tenancy start date |
+| **Location Id** | SA2-2019 area code (Statistics NZ) |
+| **Dwelling Type** | House / Apartment / Flat / Room / Boarding House / ALL |
+| **Number Of Beds** | 0–9, "5+", or "ALL" (rollup) |
+| **Total Bonds** | Bonds lodged in the group |
+| **Active Bonds** | Still ongoing |
+| **Closed Bonds** | Ended |
+| **Median Rent** | Weekly rent, median |
+| **Geometric Mean Rent** | Median substitute. Avoids the plateauing effect of rents clustering at round numbers |
+| **Upper Quartile Rent** / **Lower Quartile Rent** | Synthetic 75th/25th percentile, assumes log-normal distribution |
+| **Log Std Dev Weekly Rent** | Spread of the log-rent distribution |
+| **beds_was_imputed** | **Added.** TRUE where `Number Of Beds` was filled by kNN rather than reported |
+
+### Cleaning decisions
+
+- **Timeframe:** matched dynamically against the cleaned listings file's actual date range, rather than hardcoded, so the filter stays correct if the listings panel is later edited. Three quarters overlap: 2025-10-01 (Oct–Dec 2025), 2026-01-01 (Jan–Mar 2026), 2026-04-01 (Apr–Jun 2026). No 2026-07-01 quarter exists yet, since bond data publishes a couple of months behind.
+- **Columns:** every column is kept. `Total Bonds`, `Active Bonds`, `Closed Bonds` are the stock-side variables the merge needs; `Median Rent` and the other rent statistics are the price-side variables. Nothing was dropped, since next week's comparison needs both sides.
+- **Location Id:** rows with a blank `Location Id`, or `Location Id == -99`, were dropped entirely. Blank rows also had no rent statistics, carrying no usable information. `-99` represents an "All of New Zealand" rollup rather than a real SA2 area, cannot be matched in a location-based merge, and would distort a location-level dataset if kept.
+- **Number Of Beds:** missing values (distinct from the legitimate "ALL" aggregate level, and spread thinly across dwelling types rather than concentrated in one) were imputed via kNN (k = 5), matching each row to its nearest neighbours on dwelling type, location, bond counts, and rent statistics. `beds_was_imputed` flags every filled row. Unlike the listings price column, there was no unimputed copy kept alongside, since after imputation zero missing values remain.
+
+### Known limitations
+
+1. `Location Id` is an SA2 area code, not a name or coordinate. No location-name lookup exists in this file, so it can't yet be filtered to Christchurch-only or joined to the listings data by name — a separate SA2-to-district lookup (e.g. from Stats NZ) is needed before next week's merge.
+2. The kNN distance calculation treats `Location Id` as categorical (same area vs. different), not as spatial distance. Different SA2 codes aren't numerically "close" to each other, so cross-location neighbour matching leans more on dwelling type and bond/rent figures than true geographic proximity.
+3. Bond data is quarterly while listings are monthly, so any merge will compare a single quarterly figure against up to three monthly listings figures.
+
+### How to use the output
+
+- **Reliable bed counts:** filter `beds_was_imputed == FALSE`
+- **Joining to the Airbnb panel:** requires the SA2-to-Christchurch lookup mentioned above before `Location Id` can be matched to listing coordinates.
