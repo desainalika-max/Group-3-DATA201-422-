@@ -98,7 +98,7 @@ The original `price` column is kept unchanged. `price_imputed` holds the filled 
 
 ## Cleaning the Bond Dataset
 
-**Source:** [Tenancy Services — Rental bond data](https://www.tenancy.govt.nz/about-tenancy-services/data-and-statistics/rental-bond-data/), Detailed quarterly report, Jan 2020 – Apr 2026
+**Source:** [Tenancy Services | Rental bond data](https://www.tenancy.govt.nz/about-tenancy-services/data-and-statistics/rental-bond-data/), Detailed quarterly report, Jan 2020 – Apr 2026
 **License:** Creative Commons Attribution 3.0 NZ, credited to the Ministry of Business, Innovation and Employment
 **Cleaning script:** `bond_listing_clean.Rmd`
 **Output:** `Bond Data Quarterly (cleaned).csv`
@@ -131,7 +131,7 @@ Data comes from Tenancy Services' bond database, covering private-sector bonds l
 
 ### Known limitations
 
-1. `Location Id` is an SA2 area code, not a name or coordinate. No location-name lookup exists in this file, so it can't yet be filtered to Christchurch-only or joined to the listings data by name — a separate SA2-to-district lookup (e.g. from Stats NZ) is needed before next week's merge.
+1. `Location Id` is an SA2 area code, not a name or coordinate. No location-name lookup exists in this file, so it can't yet be filtered to Christchurch-only or joined to the listings data by name, a separate SA2-to-district lookup (e.g. from Stats NZ) is needed before next week's merge.
 2. The kNN distance calculation treats `Location Id` as categorical (same area vs. different), not as spatial distance. Different SA2 codes aren't numerically "close" to each other, so cross-location neighbour matching leans more on dwelling type and bond/rent figures than true geographic proximity.
 3. Bond data is quarterly while listings are monthly, so any merge will compare a single quarterly figure against up to three monthly listings figures.
 
