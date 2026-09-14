@@ -1,0 +1,219 @@
+---
+title: "Bond Listing Cleaning"
+subtitle: "Tenancy Services detailed quarterly report, filtered to Oct 2025 - Jun 2026"
+date: "2026-09-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(VIM)
+library(lubridate)
+```
+
+# 1. Read the Data
+
+```{r paths}
+
+data_dir <- "/Users/nalikadesai/Desktop/DATA201"
+
+in_file       <- file.path(data_dir, 
+                           "Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv")
+
+listings_file <- file.path(data_dir, 
+                           "Christchurch Oct2025 to Jun2026 (cleaned).csv") 
+#Reads the listings file only to get its date range for filtering months from quarterly
+
+out_file <- file.path(data_dir, "Bond Data Quarterly (cleaned).csv")
+
+file.exists(in_file)
+file.exists(listings_file)
+```
+
+```{r read}
+bonds <- read_csv(in_file, show_col_types = FALSE)
+dim(bonds)
+```
+
+# 2. Match the timeframe to the listings panel
+
+Bond data is reported quarterly. The listings panel is monthly. Instead of
+hardcoding which quarters to keep, we read the cleaned listings output and
+matched them against its actual date range. So this filter is still correct if 
+the listings panel is edited.
+
+```{r timeframe}
+
+airbnb <- read_csv(listings_file, show_col_types = FALSE)
+
+listings_start <- min(airbnb$month_date)
+listings_end   <- max(airbnb$month_date)
+
+c(listings_start, listings_end)
+```
+
+```{r matching_quarters}
+
+bonds <- bonds %>% mutate(TimeFrame = as.Date(TimeFrame))
+
+quarter_lookup <- bonds %>%
+  distinct(TimeFrame) %>%
+  mutate(quarter_end = TimeFrame %m+% months(3) - days(1)) # Adds 3 months to the quarter's start date, then subtracts 1 day, to get that quarter's last day (e.g. 2025-10-01 -> 2025-12-31).
+
+target_quarters <- quarter_lookup %>%
+  filter(TimeFrame <= listings_end, quarter_end >= listings_start) %>%
+  pull(TimeFrame) # Extracts the TimeFrame column as a plain list of values (not a table), so it can be used with %in% in the next step.
+
+target_quarters
+
+bonds <- bonds %>% filter(TimeFrame %in% target_quarters)
+dim(bonds)
+```
+
+Three quarters overlap the listings window: 
+2025-10-01 (Oct-Dec 2025),2026-01-01 (Jan-Mar 2026) and 2026-04-01 (Apr-Jun 2026). 
+There is no 2026-07-01 quarter yet, since bond data is published a couple of months
+behind the current date and does not yet reach June 2026.
+
+# 3. Column selection
+
+Unlike the listings data, every column here is kept. 
+`Total Bonds`,`Active Bonds` and `Closed Bonds` 
+are the stock-side variables needed. `Median Rent`and the other rent statistics 
+are the price-side variables. Dropping any of them now would remove information 
+the merge specifically needs.
+
+# 4. Location Id
+
+```{r location_diagnosis}
+sum(is.na(bonds$`Location Id`)) 
+sum(bonds$`Location Id` == -99, na.rm = TRUE)
+```
+
+Missing Location Id. These rows are also blank on every rent
+statistic, so they carry no usable information beyond the row existing at
+all, and there is no defensible value to impute a location with.
+
+```{r location_drop}
+bonds <- bonds %>% filter(!is.na(`Location Id`), `Location Id` != -99)
+dim(bonds)
+```
+
+When Location Id == -99 it represents an "All of New Zealand"
+rollup, not a real SA2 area. Keeping it would mix a national total into
+what should be a location-level dataset, and it cannot be matched to
+anything in a location-based merge, so it is dropped rather than treated
+as a location like any of the other values.
+
+# 5. Types
+
+```{r types}
+bonds <- bonds %>%
+  mutate(
+    `Dwelling Type` = as.factor(`Dwelling Type`),
+    `Number Of Beds` = as.factor(`Number Of Beds`),
+    `Location Id` = as.factor(`Location Id`)
+  )
+```
+
+# 6. Number Of Beds
+
+## 6.1 What the missingness looks like
+
+```{r beds-diagnose}
+sum(is.na(bonds$`Number Of Beds`))
+
+bonds %>%
+  group_by(`Dwelling Type`) %>%
+  summarise(rows = n(), missing = sum(is.na(`Number Of Beds`)),
+            pct_missing = round(mean(is.na(`Number Of Beds`)) * 100, 1)) # For each Dwelling Type, counts total rows, how many are missing Number Of Beds, and what percent that is — to check if missingness is concentrated in one type or spread out evenly.
+```
+
+This is distinct from the existing "ALL" factor level (a legitimate
+aggregate-across-beds row). These are individual rows where the specific
+bed-count breakdown was not reported, spread thinly across dwelling
+types rather than concentrated in one category or quarter.
+
+
+## 6.2 Our approach
+
+We discussed this as a group and decided to use kNN imputation for the missing prices.
+It is one method among several, and we may test other approaches later to compare the
+results.
+
+As with price in the listings data, we impute using kNN: for each row
+missing "Number Of Beds", we find the most similar rows on dwelling type,
+location, bond counts, and rent statistics, and take their bed count. A
+house with similar rent and bond activity in the same area is a reasonable
+proxy for bedroom count.
+
+```{r beds-knn}
+set.seed(2026)
+
+bonds <- kNN(
+  bonds,
+  variable = "Number Of Beds",
+  dist_var = c("Dwelling Type", "Location Id", "Total Bonds", "Active Bonds",
+               "Closed Bonds", "Median Rent", "Geometric Mean Rent",
+               "Upper Quartile Rent", "Lower Quartile Rent"),
+  k = 5,
+  imp_var = TRUE
+)
+
+bonds <- bonds %>% rename(beds_was_imputed = `Number Of Beds_imp`)
+
+sum(bonds$beds_was_imputed)
+sum(is.na(bonds$`Number Of Beds`))
+```
+
+The original data had no separate "unimputed" copy of this column to
+preserve (unlike price, which stayed at 0% missing in some months and
+scattered elsewhere) -- every row now has a value, and `beds_was_imputed`
+marks which ones were filled in.
+
+# 7. Validation
+
+```{r checks}
+sum(duplicated(bonds[, c("TimeFrame", "Location Id", "Dwelling Type", "Number Of Beds")]))
+range(bonds$TimeFrame)
+length(unique(bonds$`Location Id`))
+colSums(is.na(bonds))
+```
+
+No duplicate rows on the natural key, "TimeFrame" falls entirely within
+the three target quarters, and no missing values remain in any column.
+
+
+# 8. Known limitations
+
+1. "Location Id" is an SA2 area code, not a geographic coordinate or a
+   name. There is no location-name lookup in this file, so it cannot yet
+   be filtered to Christchurch-only rows or joined to the listings data
+   by name. A separate SA2-to-district lookup (e.g. from Stats NZ) will
+   be needed before next week's merge.
+   
+2. The kNN distance calculation treats `Location Id` as a categorical
+   match (same area vs. different area), not as spatial distance --
+   different SA2 codes are not numerically "close" to each other in any
+   meaningful sense, so cross-location neighbour matching leans more on
+   dwelling type and bond/rent figures than true geographic proximity.
+   
+3. Bond data is quarterly while listings are monthly, so any merge will
+   necessarily compare a single quarterly figure against up to three
+   monthly listings figures.
+  
+  
+# 9. Save
+
+```{r save}
+bonds <- bonds %>% arrange(TimeFrame, `Location Id`)
+write_csv(bonds, out_file)
+
+out_file
+nrow(bonds)
+```
+   
+   
