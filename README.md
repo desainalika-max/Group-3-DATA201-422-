@@ -65,10 +65,10 @@ To calculate how long ago a listing's last review was, we count backwards from t
 | `last_review` | Parsed to `Date` | Was read in as text |
 | `reviews_per_month` | Missing values set to 0 | All 2,627 missing values belong to listings with `number_of_reviews == 0`. This is a structural zero, not a data gap — a listing with no reviews genuinely has 0 reviews per month. Imputing a market average would invent activity that never happened. `last_review` is left as `NA` for these rows, since there's no correct date to put there. |
 | `host_name` | Filled within host, then labelled "Unknown" | One row was missing a host name. The same `host_id` appears 9 times and is named in the other 8, so the value is recovered with certainty rather than guessed. Any remaining true unknowns are labelled `"Unknown"` rather than left blank. |
-| `minimum_nights` | Carried forward within listing as `minimum_nights_filled`; original kept | 37 gaps, each with a value present in an adjacent month for the same listing. Minimum nights is a host-set rule, not a market outcome, and changes rarely — carrying it forward is safer than imputing. The raw `minimum_nights` column is kept unchanged alongside the filled version. |
+| `minimum_nights` | Carried forward within listing as `minimum_nights_filled`; original kept | 37 gaps, each with a value present in an adjacent month for the same listing. Minimum nights is a host-set rule, not a market outcome, and changes rarely. Carrying it forward is safer than imputing. The raw `minimum_nights` column is kept unchanged alongside the filled version. |
 | `price` | Imputed via kNN as `price_imputed`; original kept | See below |
 | `months_present`, `in_all_9_months` | Added | Only 2,338 of 4,117 listings appear in all nine monthly snapshots. Any month-over-month price comparison should either filter to `in_all_9_months` or explicitly note that it doesn't, otherwise real price movement gets mixed up with listings simply entering or leaving the panel. |
-| `long_stay` | Added | Flags the 129 rows requiring 30+ nights minimum stay — a different market to nightly tourist rental, worth excluding from tourist-price analysis. |
+| `long_stay` | Added | Flags the 129 rows requiring 30+ nights minimum stay. A different market to nightly tourist rental, worth excluding from tourist-price analysis. |
 | `name` | Whitespace trimmed | Minor cleanup, no rows affected structurally |
 
 ### Price: the one column that needed a real imputation decision
