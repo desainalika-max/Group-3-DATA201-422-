@@ -48,7 +48,7 @@ To calculate how long ago a listing's last review was, we count backwards from t
 
 - **Why 22 June is correct:** it matches the most recent review date found in the dataset, confirming it as the actual day the scrape occurred.
 
-## Deliverable 4 — Cleaning the Airbnb Listings
+## Deliverable 4 - Cleaning the Airbnb Listings
 
 **Source:** Deliverable 3 concatenated panel, Inside Airbnb, Christchurch, Oct 2025 – Jun 2026
 **Cleaning script:** `clean_christchurch_panel.Rmd`
@@ -75,8 +75,8 @@ To calculate how long ago a listing's last review was, we count backwards from t
 
 Two distinct missingness problems were found:
 
-- **December 2025, January 2026 and February 2026 have no observed prices at all** — the entire column is blank in those three months, not a sample of missing values. Confirmed against the raw Inside Airbnb monthly file for December, so this is a source limitation, not something introduced by the Deliverable 3 concatenation.
-- **The other six months are 5–8% missing**, and this missingness is not random: among rows with a price, 0.5% have zero availability; among rows missing a price, 62% do. Inside Airbnb derives price from the booking calendar, so a listing with no available nights simply has no price to report.
+- **December 2025, January 2026 and February 2026 have no observed prices at all** the entire column is blank in those three months, not a sample of missing values. Confirmed against the raw Inside Airbnb monthly file for December, so this is a source limitation and not something introduced by the Deliverable 3 concatenation.
+- **The other six months are 5–8% missing**, and this missingness is not random: among rows with a price, 0.5% have zero availability; among rows missing a price, 62% do. Airbnb seems to only calculate a price when a listing has open dates, so no availability means no price shown.
 
 **Decision:** the team used **kNN imputation** (`VIM::kNN`, k = 10) to fill missing prices, matching each listing to its 10 nearest neighbours on room type, coordinates, minimum nights, host listing count, and month. Because December–February have no observed prices at all within those months, values for that stretch are drawn from listings in other months. 27 implausible prices (above $2,000/night) were also treated as missing before imputation.
 
@@ -87,7 +87,7 @@ The original `price` column is kept unchanged. `price_imputed` holds the filled 
 1. December 2025 – February 2026 have no observed prices, so imputed values in that window are the least reliable in the dataset.
 2. kNN was chosen as a first approach; other imputation methods haven't been tested and may give different results.
 3. Imputation uncertainty isn't carried through, so any standard errors computed on `price_imputed` will be slightly too small.
-4. Only 2,338 of 4,117 listings appear in all nine months — unbalanced panel, see `in_all_9_months`.
+4. Only 2,338 of 4,117 listings appear in all nine months, unbalanced panel, see `in_all_9_months`.
 
 ### How to use the output
 
