@@ -7,7 +7,6 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-# install once if needed: install.packages(c("dplyr", "tidyr", "readr", "VIM", "lubridate"))
 library(dplyr)
 library(tidyr)
 library(readr)
@@ -19,24 +18,27 @@ library(lubridate)
 
 ```{r paths}
 
-# "." means the folder this Rmd is in (the repo folder), so it works on every computer
-data_dir <- "."
+data_dir <- "/Users/nalikadesai/Desktop/DATA201"
 
-in_file       <- file.path(data_dir, 
-                           "Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv")
+in_file <- file.path(data_dir, 
+                     "Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv")
 
 listings_file <- file.path(data_dir, 
                            "Christchurch Oct2025 to Jun2026 (cleaned).csv") 
 #Reads the listings file only to get its date range for filtering months from quarterly
 
-out_file <- file.path(data_dir, "Bond_Data_Quarterly_(cleaned).csv")
+out_file <- file.path(data_dir, "Bond Data Quarterly (cleaned).csv")
 
 file.exists(in_file)
 file.exists(listings_file)
 ```
 
 ```{r read}
-bonds <- read_csv(in_file, show_col_types = FALSE)
+bonds <- read_csv(
+  "/Users/nalikadesai/Desktop/DATA201/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv",
+  na = c("", "NA", "NULL"),
+  show_col_types = FALSE
+)
 dim(bonds)
 ```
 
@@ -63,7 +65,7 @@ bonds <- bonds %>% mutate(TimeFrame = as.Date(TimeFrame))
 
 quarter_lookup <- bonds %>%
   distinct(TimeFrame) %>%
-  mutate(quarter_end = TimeFrame %m+% months(3) - days(1)) # Adds 3 months to the quarter's start date, then subtracts 1 day, to get that quarter's last day (e.g. 2025-10-01 -> 2025-12-31).
+  mutate(quarter_end = TimeFrame %m+% months(3) - days(1)) # We calculate quarter_end so we can check if the quarter's full 3-month span overlaps the listings' date range, not just whether its start date falls inside it. Calculates the last day of each bond quarter. 
 
 target_quarters <- quarter_lookup %>%
   filter(TimeFrame <= listings_end, quarter_end >= listings_start) %>%
@@ -142,7 +144,7 @@ types rather than concentrated in one category or quarter.
 
 ## 6.2 Our approach
 
-We discussed this as a group and decided to use kNN imputation for the missing prices.
+We discussed this as a group and decided to use kNN imputation for the missing bed counts. 
 It is one method among several, and we may test other approaches later to compare the
 results.
 
