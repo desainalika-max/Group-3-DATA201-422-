@@ -1,0 +1,117 @@
+---
+title: "Joining the Airbnb Listings to the Bond Data"
+subtitle: "Christchurch, October 2025 - June 2026, joined on area code and quarter"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+# install once if needed: install.packages(c("dplyr", "readr"))
+library(dplyr)
+library(readr)
+```
+
+# 1. Read the two files
+
+```{r}
+# area codes are labels, so both sides are read as text and match exactly
+# the bond file writes missing values as the word NULL
+listings <- read_csv("Christchurch_with_area_codes.csv",
+                     col_types = cols(id = col_character(),
+                                      host_id = col_character(),
+                                      area_code = col_character(),
+                                      .default = col_guess()))
+
+bonds <- read_csv("Bond_Data_Quarterly_(cleaned).csv",
+                  na = c("", "NA", "NULL"),
+                  col_types = cols(`Location Id` = col_character(),
+                                   .default = col_guess()))
+
+dim(listings)
+dim(bonds)
+```
+
+# 2. Give every listing its quarter
+
+Listings are monthly and bonds are quarterly, so each month gets the first day of its
+quarter, which is what the bond `TimeFrame` holds.
+
+```{r}
+listings <- listings %>%
+  mutate(quarter = case_when(
+    month_year %in% c("October 2025", "November 2025", "December 2025") ~ as.Date("2025-10-01"),
+    month_year %in% c("January 2026", "February 2026", "March 2026")    ~ as.Date("2026-01-01"),
+    month_year %in% c("April 2026", "May 2026", "June 2026")            ~ as.Date("2026-04-01")
+  ))
+
+sum(is.na(listings$quarter))   # expect 0
+```
+
+# 3. Keep one bond row per area and quarter
+
+The bond file has a row for every dwelling type and bed count, so an area has about
+five rows per quarter. We keep the area total, which is the row where both are
+`"ALL"`. The kNN step in `bond_listing_clean.Rmd` filled 20 missing bed counts with
+`"ALL"`, which makes those rows look like totals, so imputed rows are dropped too.
+
+```{r}
+bond_totals <- bonds %>%
+  filter(`Dwelling Type` == "ALL",
+         `Number Of Beds` == "ALL",
+         beds_was_imputed == FALSE) %>%
+  select(area_code                  = `Location Id`,
+         quarter                    = TimeFrame,
+         bond_total                 = `Total Bonds`,
+         bond_active                = `Active Bonds`,
+         bond_closed                = `Closed Bonds`,
+         median_rent_weekly         = `Median Rent`,
+         geo_mean_rent_weekly       = `Geometric Mean Rent`,
+         upper_quartile_rent_weekly = `Upper Quartile Rent`,
+         lower_quartile_rent_weekly = `Lower Quartile Rent`,
+         log_sd_rent_weekly         = `Log Std Dev Weekly Rent`)
+
+nrow(bond_totals)
+sum(duplicated(bond_totals[, c("area_code", "quarter")]))   # expect 0
+```
+
+# 4. Join
+
+A left join keeps every Airbnb row. An inner join would drop listings and undercount
+Airbnbs per area, and a full join would add bond areas from all of New Zealand.
+
+```{r}
+joined <- listings %>%
+  left_join(bond_totals, by = c("area_code", "quarter")) %>%
+  mutate(has_bond_data = !is.na(bond_total))
+
+nrow(joined) == nrow(listings)   # expect TRUE, the join adds no rows
+
+table(joined$has_bond_data)
+```
+
+# 5. Save
+
+```{r}
+write_csv(joined, "Christchurch_with_bonds.csv")
+
+dim(joined)
+```
+
+# Result
+
+21,946 listing rows (76%) matched a bond total. The other 6,849 are kept with empty
+bond columns, for three reasons:
+
+| Reason | Rows |
+|---|---|
+| Area code is not in the bond data, mostly areas split since its boundaries (listings have 332501, bonds have 332500) | 4,862 |
+| Area is in the bond data, but is too quiet to be published in these quarters | 1,465 |
+| Area has bond rows that quarter, but no total row | 522 |
+
+Notes for using the joined file:
+
+- Rents are **weekly**, prices are **per night**. Divide rents by 7 before comparing.
+- Only rows where `has_bond_data` is `TRUE` can compare prices with rents.
+- A listing appears once a month, so count distinct `id`s per quarter, not rows.
+- 37 listings change area code between months, because Airbnb shifts map locations
+  slightly for privacy.
