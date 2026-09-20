@@ -9,6 +9,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+# install once if needed: install.packages(c("dplyr", "tidyr", "readr", "VIM"))
 library(dplyr)
 library(tidyr)
 library(readr)
@@ -18,12 +19,10 @@ library(VIM)
 # 1. Read the data
 
 ```{r paths}
-# This Rmd sits in .../Group-3-DATA201-422-/data/clean, so "." is that folder.
-# Knitting sets the working directory to the Rmd's own location.
+# "." means the folder this Rmd is in (the repo folder), so it works on every computer.
+# Knitting, and running chunks in RStudio, both use that folder automatically.
+# Running chunks in VS Code: open the repo folder first (File > Open Folder).
 data_dir <- "."
-
-# If you run the chunks in the console instead of knitting, uncomment this:
-# data_dir <- "C:/Users/dianq/OneDrive/Desktop/Data Wrangling/Group-3-DATA201-422-/data/clean"
 
 in_file  <- file.path(data_dir, "Christchurch Oct2025 to Jun2026 (combined).csv")
 out_file <- file.path(data_dir, "Christchurch Oct2025 to Jun2026 (cleaned).csv")
@@ -254,15 +253,7 @@ colSums(is.na(airbnb))
 Coordinates fall between -43.87 and -43.42 latitude and 172.43 to 173.10 longitude,
 which is Christchurch City including Banks Peninsula. No stray points.
 
-# 11. How to use the output
-
-* **Observed prices only** - filter `price_was_imputed == FALSE`.
-* **Balanced comparisons** - filter `in_all_9_months`.
-* **Month-over-month price comparisons** - note that prices before December 2025 and
-  after February 2026 sit at noticeably different levels, so the two periods are not
-  directly comparable.
-
-# 12. Known limitations
+# 11. Known limitations
 
 1. December 2025 to February 2026 contain no observed prices, so those values are the
    least reliable in the dataset.
@@ -271,7 +262,7 @@ which is Christchurch City including Banks Peninsula. No stray points.
 3. Imputation uncertainty is not carried through, so standard errors computed on
    `price_imputed` will be slightly too small.
 
-# 13. Save
+# 12. Save
 
 ```{r save}
 airbnb <- airbnb %>% arrange(month_date, id)
