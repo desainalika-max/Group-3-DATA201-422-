@@ -1,0 +1,182 @@
+---
+title: "Airbnb vs Long-Term Rentals in Christchurch"
+subtitle: "Deliverable 5 questions, October 2025 - June 2026"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(dplyr)
+library(readr)
+```
+
+```{r}
+# made by join_listings_bonds.Rmd, so knit that first
+joined <- read_csv("Christchurch_with_bonds.csv",
+                   col_types = cols(id = col_character(),
+                                    host_id = col_character(),
+                                    area_code = col_character(),
+                                    .default = col_guess()))
+```
+
+# 1. Median Airbnb price in Christchurch Central (326600)
+
+```{r}
+central <- joined %>% filter(area_code == "326600")
+
+nrow(central)             # listing-months
+n_distinct(central$id)    # listings
+```
+
+```{r}
+# observed prices only: Dec-Feb have no prices, and prices over $2,000 are errors
+observed <- central %>% filter(price_was_imputed == FALSE)
+
+nrow(observed)
+median(observed$price)
+```
+
+```{r}
+# check 1: include the imputed prices
+median(central$price_imputed)
+
+# check 2: count each listing once
+per_listing <- observed %>%
+  group_by(id) %>%
+  summarise(price = median(price))
+
+median(per_listing$price)
+
+# for comparison: all of Christchurch
+median(joined$price[joined$price_was_imputed == FALSE])
+```
+
+## Result: $238 per night
+
+| Median price per night | |
+|---|---|
+| Christchurch Central (326600) | **$238** |
+| All of Christchurch | $205 |
+| Central costs more by | $33 (16%) |
+
+- Based on 705 real prices from 150 listings.
+- Left out: December to February (no prices) and 8 prices over $2,000.
+- Counting other ways gives $236 and $237, so the answer is stable.
+
+# 2. Largest gap between short- and long-term rental prices
+
+```{r}
+# entire homes with an observed price, nightly stays only, in areas with bond data
+gaps <- joined %>%
+  filter(room_type == "Entire home/apt",
+         price_was_imputed == FALSE,
+         long_stay == FALSE,
+         has_bond_data == TRUE) %>%
+  mutate(long_term_per_night = median_rent_weekly / 7,
+         gap = price - long_term_per_night)
+
+nrow(gaps)
+n_distinct(gaps$id)
+median(gaps$gap)
+```
+
+```{r, fig.height = 6}
+# gap for every Airbnb, grouped by ward (outliers hidden so the boxes are readable)
+par(mar = c(5, 11, 2, 1))
+boxplot(gap ~ reorder(neighbourhood, gap, median), data = gaps,
+        horizontal = TRUE, las = 1, outline = FALSE, ylab = "",
+        xlab = "Airbnb price minus long-term rent ($ per night)")
+```
+
+```{r}
+# median gap per ward
+gaps %>%
+  group_by(neighbourhood) %>%
+  summarise(listings = n_distinct(id), median_gap = median(gap)) %>%
+  arrange(desc(median_gap))
+
+# median gap per location id, areas with at least 20 listings
+gaps %>%
+  group_by(area_code) %>%
+  summarise(ward = first(neighbourhood),
+            listings = n_distinct(id),
+            airbnb_price = median(price),
+            long_term_per_night = round(median(long_term_per_night)),
+            median_gap = median(gap)) %>%
+  filter(listings >= 20) %>%
+  arrange(desc(median_gap)) %>%
+  head(5)
+
+# Banks Peninsula has no bond data at all
+joined %>%
+  filter(neighbourhood == "Banks Peninsula Ward") %>%
+  count(has_bond_data)
+```
+
+## Result: Heathcote Ward, location 332700
+
+| A whole home in 332700 | Per night |
+|---|---|
+| Airbnb | $344 |
+| Long-term rent | $89 |
+| **Gap** | **$255** |
+
+- Christchurch median gap: $144 a night.
+- By ward: Halswell is highest ($186) but has only 52 listings. Heathcote is next
+  ($164) with 214 listings, and holds the widest area, so we name Heathcote.
+- Compares entire homes only, using real prices and nightly stays. An area needs
+  20+ listings to be ranked.
+- **Caveat:** Banks Peninsula has no bond data (3,548 listing-months). It is full of
+  holiday homes, so the real largest gap may be hidden there.
+
+# 3. Number of Airbnbs vs rental properties
+
+```{r}
+# latest quarter (Apr-Jun 2026): Airbnb listings vs active bonds in each area
+counts <- joined %>%
+  filter(quarter == as.Date("2026-04-01"), has_bond_data == TRUE) %>%
+  group_by(area_code) %>%
+  summarise(ward = first(neighbourhood),
+            airbnbs = n_distinct(id),
+            rentals = first(bond_active)) %>%
+  mutate(airbnbs_per_100_rentals = round(100 * airbnbs / rentals))
+
+sum(counts$airbnbs)
+sum(counts$rentals)
+
+counts %>%
+  arrange(desc(airbnbs_per_100_rentals)) %>%
+  head(5)
+```
+
+```{r, fig.height = 6}
+# the same comparison per ward
+ward_counts <- counts %>%
+  group_by(ward) %>%
+  summarise(airbnbs = sum(airbnbs), rentals = sum(rentals)) %>%
+  mutate(airbnbs_per_100_rentals = round(100 * airbnbs / rentals)) %>%
+  arrange(airbnbs_per_100_rentals)
+
+ward_counts
+
+par(mar = c(5, 11, 2, 1))
+barplot(ward_counts$airbnbs_per_100_rentals, names.arg = ward_counts$ward,
+        horiz = TRUE, las = 1,
+        xlab = "Airbnbs per 100 long-term rentals (Apr-Jun 2026)")
+```
+
+## Result: 8 Airbnbs per 100 rentals
+
+April to June 2026:
+
+| | Airbnbs | Rentals | Per 100 rentals |
+|---|---|---|---|
+| All areas with bond data | 2,840 | 36,219 | **8** |
+| Central Ward | 1,347 | 7,761 | 17 |
+| Christchurch Central (326600) | 146 | 42 | 348 |
+
+- Airbnbs cluster in the centre. Every ward outside Central has 2 to 9 per 100.
+- Only two areas have more Airbnbs than rentals: 326600 and 327100 (293 vs 276).
+- Counts distinct listings in the quarter against active bonds.
+- Banks Peninsula is missing, because it has no bond data.
+- **Beds:** cannot be compared. The listings file has no bedrooms column.
