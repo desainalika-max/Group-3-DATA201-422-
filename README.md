@@ -8,6 +8,7 @@
 - Nalika
 - Dian Qiu
 - Agar
+- Jonah
 
 ## Dataset
 
@@ -22,7 +23,8 @@
 | **host_name** | Host's first name |
 | **neighbourhood_group** | Broader region grouping |
 | **neighbourhood** | Suburb/area of the listing |
-| **latitude** / **longitude** | Geographic coordinates |
+| **latitude**                        | Geographic coordinate (north-south position) |
+| **longitude**                       | Geographic coordinate (east-west position)   |
 | **room_type** | Entire home/apt, Private room, Shared room, or Hotel room|
 | **price** | Nightly price (NZD) |
 | **minimum_nights** | Minimum stay required |
@@ -60,7 +62,8 @@ To calculate how long ago a listing's last review was, we count backwards from t
 
 | Column | Change | Reason |
 | --- | --- | --- |
-| `id`, `host_id` | Read as character, not numeric | The largest `id` is 17 digits. A double only holds ~15 significant digits reliably, so reading these as numbers would silently corrupt the last few. They're labels, never used in arithmetic. |
+| `id`                                | Read as character, not numeric                                           | The largest `id` is 17 digits. A double only holds ~15 significant digits reliably, so reading these as numbers would silently corrupt the last few. It's a label, never used in arithmetic.             |
+| `host_id`                           | Read as character, not numeric                                           | Same reasoning as `id`: some host IDs are large enough to risk precision loss if stored as a number, so it's kept as a label instead.                                                                     |
 | `license` | Dropped | 100% missing across all 28,795 rows |
 | `month_year` | Converted to an ordered factor | As plain text, months sort alphabetically (April, August, December...), which breaks every grouped summary and chart. An explicit factor order fixes this. |
 | `month_date` | Added | A real `Date` column alongside `month_year`, so month arithmetic and time-series joins work correctly. `month_year` stays as the display-order version. |
@@ -69,7 +72,8 @@ To calculate how long ago a listing's last review was, we count backwards from t
 | `host_name` | Filled within host, then labelled "Unknown" | One row was missing a host name. The same `host_id` appears 9 times and is named in the other 8, so the value is recovered with certainty rather than guessed. Any remaining true unknowns are labelled `"Unknown"` rather than left blank. |
 | `minimum_nights` | Carried forward within listing as `minimum_nights_filled`; original kept | 37 gaps, each with a value present in an adjacent month for the same listing. Minimum nights is a host-set rule, not a market outcome, and changes rarely. Carrying it forward is safer than imputing. The raw `minimum_nights` column is kept unchanged alongside the filled version. |
 | `price` | Imputed via kNN as `price_imputed`; original kept | See below |
-| `months_present`, `in_all_9_months` | Added | Only 2,338 of 4,117 listings appear in all nine monthly snapshots. Any month-over-month price comparison should either filter to `in_all_9_months` or explicitly note that it doesn't, otherwise real price movement gets mixed up with listings simply entering or leaving the panel. |
+| `months_present`   | Added | Count of how many of the nine monthly snapshots this listing appears in. |
+| `in_all_9_months`  | Added | TRUE if the listing appears in all nine monthly snapshots. Any month-over-month price comparison should either filter to this or explicitly note that it doesn't, otherwise real price movement gets mixed up with listings simply entering or leaving the panel. |
 | `long_stay` | Added | Flags the 129 rows requiring 30+ nights minimum stay. A different market to nightly tourist rental, worth excluding from tourist-price analysis. |
 | `name` | Whitespace trimmed | Minor cleanup, no rows affected structurally |
 
@@ -120,7 +124,8 @@ Data comes from Tenancy Services' bond database, covering private-sector bonds l
 | **Closed Bonds** | Ended |
 | **Median Rent** | Weekly rent, median |
 | **Geometric Mean Rent** | Median substitute. Avoids the plateauing effect of rents clustering at round numbers |
-| **Upper Quartile Rent** / **Lower Quartile Rent** | Synthetic 75th/25th percentile, assumes log-normal distribution |
+| **Upper Quartile Rent**                           | Synthetic 75th percentile, assumes log-normal distribution                           |
+| **Lower Quartile Rent**                           | Synthetic 25th percentile, assumes log-normal distribution                           |
 | **Log Std Dev Weekly Rent** | Spread of the log-rent distribution |
 | **beds_was_imputed** | **Added.** TRUE where `Number Of Beds` was filled by kNN rather than reported |
 
