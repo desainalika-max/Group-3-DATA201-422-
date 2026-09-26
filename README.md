@@ -161,8 +161,8 @@ tag every listing with the wrong area.
 
 **Check performed**: Before running the geocoding script across the full
 dataset, we tested a single known coordinate for a listing in Redcliffs
-and confirmed the API returned area code `332100` (Redcliffs) — a real,
-correctly-located Christchurch suburb — before trusting the script to run
+and confirmed the API returned area code `332100` (Redcliffs) which is a real,
+correctly-located Christchurch suburb, before trusting the script to run
 across all ~4,000 unique listing coordinates.
 
 **Result**: Confirmed correct, catching a potential coordinate-order error before it could silently corrupt the entire
