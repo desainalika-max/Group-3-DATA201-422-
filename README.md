@@ -146,3 +146,24 @@ Data comes from Tenancy Services' bond database, covering private-sector bonds l
 
 - **Reliable bed counts:** filter `beds_was_imputed == FALSE`
 - **Joining to the Airbnb panel:** requires the SA2-to-Christchurch lookup mentioned above before `Location Id` can be matched to listing coordinates.
+
+
+### Sanity Check Example
+
+**Step checked**: Geocoding the Airbnb listings to Stats NZ SA2 area codes via
+the Koordinates Query API.
+
+**Why this step needs checking**: The Koordinates API takes coordinates as
+`x=longitude, y=latitude`. This is an easy pair to swap by mistake. A swapped
+coordinate still returns a real, valid-looking area code with no error
+thrown, so a bug here would not crash the script; it would just silently
+tag every listing with the wrong area.
+
+**Check performed**: Before running the geocoding script across the full
+dataset, we tested a single known coordinate for a listing in Redcliffs
+and confirmed the API returned area code `332100` (Redcliffs) — a real,
+correctly-located Christchurch suburb — before trusting the script to run
+across all ~4,000 unique listing coordinates.
+
+**Result**: Confirmed correct, catching a potential coordinate-order error before it could silently corrupt the entire
+geocoded dataset.
