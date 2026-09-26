@@ -488,14 +488,6 @@ gaps %&gt;%
 ## 3 325700    Central Ward         99         252                   76       178.
 ## 4 323800    Innes Ward           31         252.                  75       177.
 ## 5 326800    Central Ward         28         239                   70       170.</code></pre>
-<pre class="r"><code># Banks Peninsula has no bond data at all
-joined %&gt;%
-  filter(neighbourhood == &quot;Banks Peninsula Ward&quot;) %&gt;%
-  count(has_bond_data)</code></pre>
-<pre><code>## # A tibble: 1 × 2
-##   has_bond_data     n
-##   &lt;lgl&gt;         &lt;int&gt;
-## 1 FALSE          3548</code></pre>
 <div id="result-heathcote-ward-location-332700" class="section level2">
 <h2>Result: Heathcote Ward, location 332700</h2>
 <table>
@@ -527,9 +519,6 @@ Heathcote is next ($164) with 214 listings, and holds the widest area,
 so we name Heathcote.</li>
 <li>Compares entire homes only, using real prices and nightly stays. An
 area needs 20+ listings to be ranked.</li>
-<li><strong>Caveat:</strong> Banks Peninsula has no bond data (3,548
-listing-months). It is full of holiday homes, so the real largest gap
-may be hidden there.</li>
 </ul>
 </div>
 </div>
@@ -629,9 +618,6 @@ per 100.</li>
 <li>Only two areas have more Airbnbs than rentals: 326600 and 327100
 (293 vs 276).</li>
 <li>Counts distinct listings in the quarter against active bonds.</li>
-<li>Banks Peninsula is missing, because it has no bond data.</li>
-<li><strong>Beds:</strong> cannot be compared. The listings file has no
-bedrooms column.</li>
 </ul>
 </div>
 </div>
