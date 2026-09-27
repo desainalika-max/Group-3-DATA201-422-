@@ -56,9 +56,9 @@ A second mismatch: `bond_listing_clean.Rmd` points `data_dir` at `/Users/nalikad
 
 `airbnb_vs_rentals.Rmd` does not write a new CSV. It knits to HTML and reports three results:
 
-1. Median observed Airbnb price in Christchurch Central (SA2 `326600`): **$238 per night**.
-2. Largest short-term vs long-term price gap among entire homes with bond data: **Heathcote Ward, location `332700`, $255 per night**.
-3. Airbnbs per 100 active bonds in Apr–Jun 2026, among areas with bond data: **8**.
+1. Median observed Airbnb price in Christchurch Central (SA2 `326600`): **$236 per night**.
+2. Largest short-term vs long-term price gap among entire homes with bond data: **Heathcote Ward, location `332700`, $259 per night**.
+3. Airbnbs per 100 active bonds in Apr–Jun 2026, among areas with bond data: **7**.
 
 Those numbers live in the notebook as written results, not as a separate saved table.
 
@@ -254,7 +254,7 @@ A bad key, a wrong layer, or a swapped lat/lng can produce `None` area codes and
 
 The README records a one-location geocoding check: a known Redcliffs listing should return SA2 `332100`. That is the lecture pattern applied to the step that is easiest to get silently wrong (`x=longitude`, `y=latitude`). It is documented as a pre-run check, not as an automated test in `get_area_codes.py`.
 
-`airbnb_vs_rentals.Rmd` does **robustness checks** on Q1 (observed vs imputed medians; listing-months vs one row per listing) and reports that $238, $236, and $237 sit close together. That is related, but it is a sensitivity check on an aggregate, not a hand calculation of a single listing’s price.
+`airbnb_vs_rentals.Rmd` does **robustness checks** on Q1 (observed vs imputed medians; listing-months vs one row per listing) and reports that $238, $236, and $234 sit close together. That is related, but it is a sensitivity check on an aggregate, not a hand calculation of a single listing’s price.
 
 `join_listings_bonds.Rmd` decomposes unmatched rows into three counted reasons (boundary splits, unpublished quiet areas, missing total row). That is a reconciliation of join coverage, not a one-row expected-join check.
 
