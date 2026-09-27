@@ -1,107 +1,69 @@
 # Deliverable 6: what we changed and why
 
-We went back over our code using the Week 9 lecture ideas: relative file paths, settings
-at the top of each file, checks that stop the code, and sanity checking one row by hand.
+Nalika's design principles document (`design_principles.md`, made with Cursor) checks our code against four practices from the Week 9 lectures: relative file paths (her section 4.1), avoiding magic numbers (4.2), checks that stop the code instead of comments (4.3), and sanity checking one row by hand (4.4). Her section 6 lists every place where the code did not match. For task 1 we fixed those places in the code. These notes follow the same order as her document, so each change can be matched to the problem she found.
 
 Where to find each part of Deliverable 6:
 
-| Task | Where |
-| --- | --- |
-| 1. Revisit the code | The Rmd files and `get_area_codes.py` |
-| 2. Notes on what changed and why | This file |
-| 3. Sanity check example | `README.md`, section "Sanity Check Example" |
-| 4. Design principles document | `design_principles.md` |
-| 5. Document vs code check | `design_principles.md`, section 6 |
+- Task 1 (revisit the code): the Rmd files and `get_area_codes.py`
+- Task 2 (notes on what we changed): this file (the same notes are also at the end of the README)
+- Task 3 (sanity check example): Nalika's "Sanity Check Example" section in the README
+- Task 4 (design principles document): Nalika's `design_principles.md`
+- Task 5 (does the document match the code): Nalika's section 6 lists the mismatches, and the fixes are in the parts below
 
-## Answers before and after
+## How the answers changed
 
-| | Deliverable 5 | Deliverable 6 |
-|---|---|---|
-| Q1: median Airbnb price, Christchurch Central | $238 | **$236** |
-| Q1: median Airbnb price, all of Christchurch | $205 | $211 |
-| Q2: area with the largest gap | 332700 Heathcote, $255 | 332700 Heathcote, **$259** |
-| Q3: Airbnbs per 100 long-term rentals | 8 | **7** |
+- The median Airbnb price in Christchurch Central went from $238 to $236 a night.
+- The median Airbnb price for all of Christchurch went from $205 to $211 a night.
+- The area with the largest gap is still 332700 in Heathcote, but the gap went from $255 to $259 a night.
+- Airbnbs per 100 long-term rentals went from 8 to 7.
+- None of our conclusions changed. The numbers moved a little because of the data fixes in part 5.
+- We updated these figures in sections 2 and 4.4 of Nalika's document so it shows the new answers. Everything else in her document is as she wrote it.
 
-The conclusions did not change. The numbers moved a little because of the fixes in
-section 5.
+## 1. Relative file paths (Nalika's section 4.1)
 
-## 1. Relative file paths
+- Her document found that `bond_listing_clean.Rmd` used a folder on Nalika's laptop, `/Users/nalikadesai/Desktop/DATA201`, in two places, so it only ran on her computer. We changed both to the repo folder so it runs for anyone.
+- She also found that the file saved `Bond Data Quarterly (cleaned).csv` while the join reads `Bond_Data_Quarterly_(cleaned).csv`, so rerunning it never updated the file the join used. We made the names match.
+- The saved bond CSV had been made by an older version of the code and still had 94 rows with no area. We rebuilt it from the current code, so the saved data is what the code actually makes.
+- She noted that `get_area_codes.py` only works when it is run from the repo folder. We kept that, and added a line at the top of the script saying so.
 
-| What we changed | Why |
-| --- | --- |
-| `bond_listing_clean.Rmd` used `/Users/nalikadesai/Desktop/DATA201`. It now uses the repo folder. | The lecture says never use a path from your own computer. The file only ran on one laptop. |
-| The bond Rmd now saves `Bond_Data_Quarterly_(cleaned).csv`, the name the join reads. | It saved a different name, so rerunning it never updated the file the join uses. |
-| The bond CSV was rebuilt from the code. | The saved file came from an older version of the code and still had 94 rows with no area. |
+## 2. Magic numbers (Nalika's section 4.2)
 
-## 2. Settings at the top of each file
+Her table lists the numbers that were typed straight into the code. Each one is now named once at the top of its file, so the name says what it means and there is only one place to change it:
 
-| What we changed | Why |
-| --- | --- |
-| Each file now starts with one or two lines saying what it reads and writes. | The lecture's "file header": a reader knows what the file is for before reading the code. |
-| Numbers that control the code are named once at the top, e.g. `price_max <- 2000`, `knn_k <- 10`, `long_stay_nights <- 30`, `days_per_week <- 7`, `N_PROCESSES = 20`. | The lecture says no "magic numbers". A named setting says what the number means and is easy to change. The full list is in `design_principles.md`, section 4.2. |
+- `clean_christchurch_panel.Rmd`: `k = 10` is now `knn_k`, `2000` is now `price_max`, `30` is now `long_stay_nights`, and the `9` in `in_all_9_months` is now worked out from the list of months.
+- `bond_listing_clean.Rmd`: `-99` is now `national_total_id`. The `k = 5` is gone, because this file no longer uses kNN (see part 5).
+- `get_area_codes.py`: `processes=20`, `timeout=15` and the `500` checkpoint are now `N_PROCESSES`, `TIMEOUT_SECONDS` and `CHECKPOINT_EVERY`.
+- `airbnb_vs_rentals.Rmd`: `7` is now `days_per_week`, `20` is now `min_listings`, `"326600"` is now `central_area`, and `"2026-04-01"` is now `count_month` (now June 2026, see part 5).
+- Each file also starts with a line or two saying what it reads and what it writes, like the file headers in the lecture.
 
-## 3. Checks that stop the code
+## 3. Checks that stop the code (Nalika's section 4.3)
 
-| What we changed | Why |
-| --- | --- |
-| Checks written as a printed number with `# expect 0` are now `if (...) stop("...")`. | The lecture says to use assertions instead of comments. A printed number is easy to miss, but `stop()` ends the knit, so a bad join or a duplicate row cannot pass silently. |
-| `get_area_codes.py` now stops with an error if any listing has no area code (after saving its file). | Before, a failed lookup quietly became a blank area code. |
-| Bond `Location Id` is read as text. | Read as a number, area 200000 was saved as `2e+05`. Area codes are labels, the same lesson as the listing `id`. |
+- Her document showed that checks like `sum(duplicated(...))   # expect 0` only print a number and carry on. We changed all of them to `if (...) stop("...")`, the same pattern as the lecture's assertions slide. This covers every check she listed: duplicate listing-months, months without a quarter, duplicate bond totals, the join adding rows, and missing input files.
+- She found that `get_area_codes.py` turns a failed lookup into a blank area code without saying anything. It now saves its file and then stops with an error if any listing has no area code.
+- She pointed out that `bond_listing_clean.Rmd` only claimed "no duplicate rows" in its text. When we turned that claim into a real check, it failed: there were 779 duplicate rows. Part 5 explains the fix.
+- The bond `Location Id` is now read as text. When it was read as a number, area 200000 was saved as `2e+05`, the same problem her document describes for the listing ids.
 
-## 4. Sanity checks: one row worked out by hand
+## 4. Sanity checks on one row (Nalika's section 4.4 and her sanity check example)
 
-Nalika's sanity check example (in the README) checks the geocoding step with one known
-Redcliffs listing. We built on it:
+- Her Redcliffs check was written in the README but not in the code, so a later edit to the geocoder could break it without anyone noticing. It now runs inside `get_area_codes.py` at the start of every run, and the script stops if Redcliffs does not come back as 332100.
+- She found there was no one-row check for the filled prices. `clean_christchurch_panel.Rmd` now checks one townhouse by hand: its real prices are 450, 450, 490, 614, 615 and 741, so its median is (490 + 614) / 2 = $552, and the code has to give exactly that.
+- She found there was no one-row check for the join, and suggested a listing in 326600 in April 2026. `join_listings_bonds.Rmd` now does exactly that. The listing shows 42 active bonds and a weekly rent of $537, the same as the raw bond report.
 
-| What we changed | Why |
-| --- | --- |
-| The Redcliffs check now runs in `get_area_codes.py` at the start of every run. It stops if the answer is not `332100`. | Done by hand once, it only protected that one run. In code, it catches a swapped latitude and longitude every time. |
-| `clean_christchurch_panel.Rmd` checks one listing's filled price by hand: real prices 450, 450, 490, 614, 615, 741, so the median is (490 + 614) / 2 = $552. | This is the lecture's "calculate and compare" for the price-filling step. |
-| `join_listings_bonds.Rmd` checks that one Central listing in April 2026 has the same bond values as the raw bond report (42 active bonds, $537 rent). | This checks the join against the original data, not against our own cleaned file. |
+## 5. Other problems we found while fixing these
 
-## 5. Data fixes we found while checking
+- Filled prices. kNN filled missing prices by copying from similar listings, but it cannot tell apart listings from the same host at the same address. One host's 7 listings, from 2 bedroom flats to a 4 bedroom townhouse, all got $213 for December. This happened to 564 prices. Now a missing price is filled with that listing's own median price first, and kNN is only used for listings that never show a price.
+- Counting each listing once. A listing seen in six months used to count six times in the median. Now each listing gets one price, its own median, before we take the median across listings. Central went from $238 to $236, and leaving out the host with 7 listings does not change it.
+- Question 3. Active bonds count the rentals at one point in time, so we now count the Airbnbs listed in June 2026, instead of every Airbnb seen at any point from April to June. This moved the answer from 8 to 7 per 100 rentals.
+- Bed counts in the bond data. A blank bed count means the number of bedrooms was not recorded. kNN gave these rows bed counts the area already had, which made the 779 duplicate rows from part 3. They are now labelled "Not recorded", and the check stops the run if a duplicate ever appears. Nalika's sections 3 and 5 still describe the old kNN step and the `beds_was_imputed` column, because her document was written before this change.
+- Typed numbers. Numbers in the result text are now printed by the code instead of typed by hand. This showed that one hand-typed count, in the table of why some listings have no bond data, was wrong (522 instead of 61).
 
-**Filled prices (`clean_christchurch_panel.Rmd`).** kNN filled missing prices by copying
-from similar listings. It cannot tell apart listings from the same host at the same
-address, so one host's 7 listings, from 2-bedroom flats to 4-bedroom townhouses, all got
-$213 for December. This happened to 564 prices. Now a missing price is filled with the
-listing's own median price first, and kNN is only used for listings that never show a
-price.
+## 6. The doubled analysis file (last row of Nalika's section 6)
 
-**Medians count each listing once (`airbnb_vs_rentals.Rmd`).** Before, a listing seen in
-six months counted six times. Now each listing gets one price (its own median) before we
-take the median. This moved Central from $238 to $236. Leaving out the host with 7
-listings does not change it.
+- Her document found that `airbnb_vs_rentals.Rmd` had the whole analysis in it twice. It also would not knit. We kept one copy and added back the two notes that were only in the second copy: the Banks Peninsula caveat and the note that bedrooms cannot be compared.
 
-**Question 3 counts Airbnbs in one month.** Active bonds count rentals at one point in
-time, so we now count the Airbnbs listed in June 2026. Before, we counted every listing
-seen in April, May or June. This moved 8 per 100 to 7.
+## 7. Things we considered but did not change
 
-**Bed counts in the bond data (`bond_listing_clean.Rmd`).** A blank bed count is its own
-group: bonds where the bedrooms were not recorded. kNN gave them a bed count the area
-already had, which made 779 duplicate rows. The Rmd said "No duplicate rows", but its
-own check printed 779. They are now labelled "Not recorded", and a check stops the run
-on any duplicate.
-
-**Result numbers come from the code.** Numbers in the result text are now written with
-inline R. The hand-typed table of why some rows have no bond data turned out to be wrong
-(522 where it should be 61).
-
-## 6. Fixing the merge
-
-When Nalika's work was merged, `airbnb_vs_rentals.Rmd` ended up with the whole analysis
-twice and would not knit ("Duplicate chunk label 'setup'"). We kept one copy, the
-Deliverable 6 version, and added back the two notes from the second copy: the Banks
-Peninsula caveat and "bedrooms cannot be compared".
-
-## 7. Considered but not changed
-
-- **Separate `data/`, `src/` and `out/` folders.** The lecture recommends this. Moving the
-  files now would break teammates' file paths in the middle of the project, so we kept
-  one folder.
-- **File names with spaces**, such as `Christchurch Oct2025 to Jun2026 (cleaned).csv`.
-  Renaming would also break other files. We will use plain names for new files.
-- **Month names and quarter dates written out in full.** A loop would be shorter, but the
-  team agreed on simple code that everyone can read.
-- **Rent includes rooms.** Question 2 compares whole-home Airbnbs with rent for all
-  dwelling types. House-only rents exist for most areas, so this is our next improvement.
+- Separate data, src and out folders. The lecture recommends this, but moving files halfway through the project would break everyone's file paths.
+- File names with spaces, like `Christchurch Oct2025 to Jun2026 (cleaned).csv`. Renaming them would break other files too, so we will use simple names for new files instead.
+- Month names and quarter dates written out in full. A loop would be shorter, but the team agreed to keep the code simple enough for everyone to read.
+- Rent includes rooms. Question 2 compares whole-home Airbnbs with rent for every kind of rental, including rooms. House-only rents exist for most areas, so this is the next thing we would improve.
