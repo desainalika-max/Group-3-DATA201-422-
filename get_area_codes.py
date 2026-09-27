@@ -22,6 +22,7 @@ def get_area_code(coords):
         features = data["vectorQuery"]["layers"][str(LAYER_ID)]["features"]
         if not features:
             return None
+        
         return features[0]["properties"]["SA22026_V1_00"]
     except Exception as e:
         print(f"Failed for {lat}, {lng}: {e}")
