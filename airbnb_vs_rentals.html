@@ -356,17 +356,27 @@ Christchurch</h1>
 </div>
 
 
+<p>Answers the three Deliverable 5 questions from
+<code>Christchurch_with_bonds.csv</code>. Knit
+<code>join_listings_bonds.Rmd</code> first, because it makes that
+file.</p>
 <pre class="r"><code># values used more than once below, so they are set in one place
 central_area &lt;- &quot;326600&quot;      # SA2 area code of Christchurch Central
 big_host     &lt;- &quot;482671075&quot;   # host with 7 listings at one Central address
 min_listings &lt;- 20            # an area needs this many listings to be ranked in question 2
-count_month  &lt;- &quot;June 2026&quot;   # the month used to count Airbnbs in question 3</code></pre>
+count_month  &lt;- &quot;June 2026&quot;   # the month used to count Airbnbs in question 3
+days_per_week &lt;- 7            # bond rents are weekly, Airbnb prices are per night</code></pre>
 <pre class="r"><code># made by join_listings_bonds.Rmd, so knit that first
 joined &lt;- read_csv(&quot;Christchurch_with_bonds.csv&quot;,
                    col_types = cols(id = col_character(),
                                     host_id = col_character(),
                                     area_code = col_character(),
-                                    .default = col_guess()))</code></pre>
+                                    .default = col_guess()))
+
+# stop if a listing appears twice in the same month
+if (anyDuplicated(joined[, c(&quot;id&quot;, &quot;month_year&quot;)]) &gt; 0) {
+  stop(&quot;The joined file has a listing twice in the same month&quot;)
+}</code></pre>
 <p><strong>How the medians are counted (changed in Deliverable
 6).</strong> The joined file has one row per listing per month. In
 Deliverable 5 we took medians over rows, so a listing with a price in
@@ -497,7 +507,7 @@ gaps &lt;- joined %&gt;%
          price_was_imputed == FALSE,
          long_stay == FALSE,
          has_bond_data == TRUE) %&gt;%
-  mutate(long_term_per_night = median_rent_weekly / 7,
+  mutate(long_term_per_night = median_rent_weekly / days_per_week,
          gap = price - long_term_per_night)
 
 # one gap per listing and area, its median over the months it has a real price
@@ -570,7 +580,17 @@ head(area_gaps, 5)</code></pre>
 halswell  &lt;- ward_gaps %&gt;% filter(ward == &quot;Halswell Ward&quot;)
 heathcote &lt;- ward_gaps %&gt;% filter(ward == &quot;Heathcote Ward&quot;)
 
-top_area &lt;- area_gaps[1, ]</code></pre>
+top_area &lt;- area_gaps[1, ]
+
+# Banks Peninsula has no bond data at all, so it cannot be ranked
+joined %&gt;%
+  filter(neighbourhood == &quot;Banks Peninsula Ward&quot;) %&gt;%
+  count(has_bond_data)</code></pre>
+<pre><code>## # A tibble: 1 × 2
+##   has_bond_data     n
+##   &lt;lgl&gt;         &lt;int&gt;
+## 1 FALSE          3548</code></pre>
+<pre class="r"><code>banks_rows &lt;- sum(joined$neighbourhood == &quot;Banks Peninsula Ward&quot;)</code></pre>
 <div id="result-heathcote-ward-location-332700" class="section level2">
 <h2>Result: Heathcote Ward, location 332700</h2>
 <table>
@@ -606,6 +626,9 @@ ranked.</li>
 <li>The gap is the median of each listing’s own gap, so it can differ by
 a dollar from the Airbnb price minus the rent, which are medians taken
 separately.</li>
+<li><strong>Caveat:</strong> Banks Peninsula has no bond data (3,548
+listing-months). It is full of holiday homes, so the real largest gap
+may be hidden there.</li>
 </ul>
 </div>
 </div>
@@ -724,6 +747,9 @@ above).</li>
 <li>Counts distinct listings in June 2026 against active bonds for the
 April to June 2026 quarter. The Deliverable 5 count over the whole
 quarter gave 8 per 100.</li>
+<li>Banks Peninsula is missing, because it has no bond data.</li>
+<li><strong>Beds:</strong> cannot be compared. The listings file has no
+bedrooms column.</li>
 </ul>
 </div>
 </div>

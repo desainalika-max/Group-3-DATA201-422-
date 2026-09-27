@@ -357,9 +357,12 @@ filtered to Oct 2025 - Jun 2026</h3>
 </div>
 
 
+<p>Cleans the Tenancy Services bond report,
+<code>Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv</code>, and writes
+<code>Bond_Data_Quarterly_(cleaned).csv</code>.</p>
 <div id="read-the-data" class="section level1">
 <h1>1. Read the Data</h1>
-<pre class="r"><code># &quot;.&quot; means the folder this Rmd is in (the repo folder), so it works on every computer
+<pre class="r"><code># file paths are relative: &quot;.&quot; is the repo folder, so this works on every computer
 data_dir &lt;- &quot;.&quot;
 
 in_file &lt;- file.path(data_dir, 
@@ -372,8 +375,11 @@ listings_file &lt;- file.path(data_dir,
 # same name as the file join_listings_bonds.Rmd reads
 out_file &lt;- file.path(data_dir, &quot;Bond_Data_Quarterly_(cleaned).csv&quot;)
 
-stopifnot(file.exists(in_file))         # stop here if an input file is missing
-stopifnot(file.exists(listings_file))</code></pre>
+# the Location Id the bond report uses for its all-of-New-Zealand total
+national_total_id &lt;- &quot;-99&quot;
+
+if (!file.exists(in_file)) stop(&quot;Input file not found: &quot;, in_file)
+if (!file.exists(listings_file)) stop(&quot;Input file not found: &quot;, listings_file)</code></pre>
 <pre class="r"><code># Location Id is an area code, a label, so it is read as text.
 # Read as a number, area 200000 was saved as &quot;2e+05&quot;.
 bonds &lt;- read_csv(
@@ -430,92 +436,85 @@ specifically needs.</p>
 <h1>4. Location Id</h1>
 <pre class="r"><code>sum(is.na(bonds$`Location Id`)) </code></pre>
 <pre><code>## [1] 94</code></pre>
-<pre class="r"><code>sum(bonds$`Location Id` == -99, na.rm = TRUE)</code></pre>
+<pre class="r"><code>sum(bonds$`Location Id` == national_total_id, na.rm = TRUE)</code></pre>
 <pre><code>## [1] 127</code></pre>
 <p>Missing Location Id. These rows are also blank on every rent
 statistic, so they carry no usable information beyond the row existing
 at all, and there is no defensible value to impute a location with.</p>
-<pre class="r"><code>bonds &lt;- bonds %&gt;% filter(!is.na(`Location Id`), `Location Id` != -99)
+<pre class="r"><code>bonds &lt;- bonds %&gt;% filter(!is.na(`Location Id`), `Location Id` != national_total_id)
 dim(bonds)</code></pre>
 <pre><code>## [1] 26991    12</code></pre>
-<p>When Location Id == -99 it represents an “All of New Zealand” rollup,
+<p>When Location Id is -99 it represents an “All of New Zealand” rollup,
 not a real SA2 area. Keeping it would mix a national total into what
 should be a location-level dataset, and it cannot be matched to anything
 in a location-based merge, so it is dropped rather than treated as a
 location like any of the other values.</p>
 </div>
-<div id="types" class="section level1">
-<h1>5. Types</h1>
-<pre class="r"><code>bonds &lt;- bonds %&gt;%
-  mutate(
-    `Dwelling Type` = as.factor(`Dwelling Type`),
-    `Number Of Beds` = as.factor(`Number Of Beds`),
-    `Location Id` = as.factor(`Location Id`)
-  )</code></pre>
-</div>
 <div id="number-of-beds" class="section level1">
-<h1>6. Number Of Beds</h1>
-<div id="what-the-missingness-looks-like" class="section level2">
-<h2>6.1 What the missingness looks like</h2>
+<h1>5. Number Of Beds</h1>
+<div id="what-the-missing-bed-counts-are" class="section level2">
+<h2>5.1 What the missing bed counts are</h2>
 <pre class="r"><code>sum(is.na(bonds$`Number Of Beds`))</code></pre>
 <pre><code>## [1] 858</code></pre>
 <pre class="r"><code>bonds %&gt;%
   group_by(`Dwelling Type`) %&gt;%
-  summarise(rows = n(), missing = sum(is.na(`Number Of Beds`)),
-            pct_missing = round(mean(is.na(`Number Of Beds`)) * 100, 1)) # For each Dwelling Type, counts total rows, how many are missing Number Of Beds, and what percent that is — to check if missingness is concentrated in one type or spread out evenly.</code></pre>
-<pre><code>## # A tibble: 6 × 4
-##   `Dwelling Type`  rows missing pct_missing
-##   &lt;fct&gt;           &lt;int&gt;   &lt;int&gt;       &lt;dbl&gt;
-## 1 ALL             13006     445         3.4
-## 2 Apartment        1057      19         1.8
-## 3 Boarding House    240       9         3.8
-## 4 Flat              698       0         0  
-## 5 House           11720     368         3.1
-## 6 Room              270      17         6.3</code></pre>
-<p>This is distinct from the existing “ALL” factor level (a legitimate
-aggregate-across-beds row). These are individual rows where the specific
-bed-count breakdown was not reported, spread thinly across dwelling
-types rather than concentrated in one category or quarter.</p>
+  summarise(rows = n(), missing = sum(is.na(`Number Of Beds`)))</code></pre>
+<pre><code>## # A tibble: 6 × 3
+##   `Dwelling Type`  rows missing
+##   &lt;chr&gt;           &lt;int&gt;   &lt;int&gt;
+## 1 ALL             13006     445
+## 2 Apartment        1057      19
+## 3 Boarding House    240       9
+## 4 Flat              698       0
+## 5 House           11720     368
+## 6 Room              270      17</code></pre>
+<pre class="r"><code># does the same area, quarter and dwelling type also have its own &quot;ALL&quot; total row?
+all_rows &lt;- bonds %&gt;%
+  filter(`Number Of Beds` == &quot;ALL&quot;) %&gt;%
+  select(TimeFrame, `Location Id`, `Dwelling Type`)
+
+bonds %&gt;%
+  filter(is.na(`Number Of Beds`)) %&gt;%
+  semi_join(all_rows, by = c(&quot;TimeFrame&quot;, &quot;Location Id&quot;, &quot;Dwelling Type&quot;)) %&gt;%
+  nrow()</code></pre>
+<pre><code>## [1] 856</code></pre>
+<p>Almost every row with a missing bed count sits next to its own
+<code>&quot;ALL&quot;</code> total row and has its own bond counts. So a missing
+bed count is not a gap in a normal row. It is a separate group: bonds
+where the number of bedrooms was not recorded.</p>
 </div>
-<div id="our-approach" class="section level2">
-<h2>6.2 Our approach</h2>
-<p>We discussed this as a group and decided to use kNN imputation for
-the missing bed counts. It is one method among several, and we may test
-other approaches later to compare the results.</p>
-<p>As with price in the listings data, we impute using kNN: for each row
-missing “Number Of Beds”, we find the most similar rows on dwelling
-type, location, bond counts, and rent statistics, and take their bed
-count. A house with similar rent and bond activity in the same area is a
-reasonable proxy for bedroom count.</p>
-<pre class="r"><code>set.seed(2026)
+<div id="our-approach-changed-in-deliverable-6" class="section level2">
+<h2>5.2 Our approach (changed in Deliverable 6)</h2>
+<p>In Deliverable 4 we filled these with kNN. kNN gave them a bed count
+the area already had, so the file ended up with two rows for the same
+area, quarter, dwelling type and bed count (779 of them), and 44 areas
+with two <code>&quot;ALL&quot;</code> total rows. The Rmd said there were no
+duplicates, but its own check printed 779.</p>
+<p>Now we label them <code>&quot;Not recorded&quot;</code>, which is what they
+are. Nothing is guessed, and every row is unique again.</p>
+<pre class="r"><code>bonds &lt;- bonds %&gt;%
+  mutate(`Number Of Beds` = ifelse(is.na(`Number Of Beds`), &quot;Not recorded&quot;,
+                                   `Number Of Beds`))
 
-bonds &lt;- kNN(
-  bonds,
-  variable = &quot;Number Of Beds&quot;,
-  dist_var = c(&quot;Dwelling Type&quot;, &quot;Location Id&quot;, &quot;Total Bonds&quot;, &quot;Active Bonds&quot;,
-               &quot;Closed Bonds&quot;, &quot;Median Rent&quot;, &quot;Geometric Mean Rent&quot;,
-               &quot;Upper Quartile Rent&quot;, &quot;Lower Quartile Rent&quot;),
-  k = 5,
-  imp_var = TRUE
-)
-
-bonds &lt;- bonds %&gt;% rename(beds_was_imputed = `Number Of Beds_imp`)
-
-sum(bonds$beds_was_imputed)</code></pre>
-<pre><code>## [1] 858</code></pre>
-<pre class="r"><code>sum(is.na(bonds$`Number Of Beds`))</code></pre>
-<pre><code>## [1] 0</code></pre>
-<p>The original data had no separate “unimputed” copy of this column to
-preserve (unlike price, which stayed at 0% missing in some months and
-scattered elsewhere) – every row now has a value, and
-<code>beds_was_imputed</code> marks which ones were filled in.</p>
+table(bonds$`Number Of Beds`)</code></pre>
+<pre><code>## 
+##            1            2            3            4            5           5+ 
+##         7030         2545         4240         1278           27          259 
+##            6            9          ALL Not recorded 
+##            6            2        10746          858</code></pre>
 </div>
 </div>
 <div id="validation" class="section level1">
-<h1>7. Validation</h1>
-<pre class="r"><code>sum(duplicated(bonds[, c(&quot;TimeFrame&quot;, &quot;Location Id&quot;, &quot;Dwelling Type&quot;, &quot;Number Of Beds&quot;)]))</code></pre>
-<pre><code>## [1] 779</code></pre>
-<pre class="r"><code>range(bonds$TimeFrame)</code></pre>
+<h1>6. Validation</h1>
+<pre class="r"><code>key_columns &lt;- c(&quot;TimeFrame&quot;, &quot;Location Id&quot;, &quot;Dwelling Type&quot;, &quot;Number Of Beds&quot;)
+
+if (anyDuplicated(bonds[, key_columns]) &gt; 0) {
+  stop(&quot;Two rows share the same quarter, area, dwelling type and bed count&quot;)
+}
+if (anyNA(bonds$`Location Id`)) stop(&quot;Some rows have no Location Id&quot;)
+if (!all(bonds$TimeFrame %in% target_quarters)) stop(&quot;A row is outside the target quarters&quot;)
+
+range(bonds$TimeFrame)</code></pre>
 <pre><code>## [1] &quot;2025-10-01&quot; &quot;2026-04-01&quot;</code></pre>
 <pre class="r"><code>length(unique(bonds$`Location Id`))</code></pre>
 <pre><code>## [1] 1818</code></pre>
@@ -527,34 +526,25 @@ scattered elsewhere) – every row now has a value, and
 ##            Closed Bonds             Median Rent     Geometric Mean Rent 
 ##                       0                       0                       0 
 ##     Upper Quartile Rent     Lower Quartile Rent Log Std Dev Weekly Rent 
-##                       0                       0                       0 
-##        beds_was_imputed 
-##                       0</code></pre>
-<p>No duplicate rows on the natural key, “TimeFrame” falls entirely
-within the three target quarters, and no missing values remain in any
-column.</p>
+##                       0                       0                       0</code></pre>
+<p>If the knit reaches this point, there are no duplicate rows on the
+natural key, every row has an area, and every row is in one of the three
+target quarters. The rent columns can still be blank, because Tenancy
+Services leaves them out when an area has too few bonds.</p>
 </div>
 <div id="known-limitations" class="section level1">
-<h1>8. Known limitations</h1>
+<h1>7. Known limitations</h1>
 <ol style="list-style-type: decimal">
-<li><p>“Location Id” is an SA2 area code, not a geographic coordinate or
-a name. There is no location-name lookup in this file, so it cannot yet
-be filtered to Christchurch-only rows or joined to the listings data by
-name. A separate SA2-to-district lookup (e.g. from Stats NZ) will be
-needed before next week’s merge.</p></li>
-<li><p>The kNN distance calculation treats <code>Location Id</code> as a
-categorical match (same area vs. different area), not as spatial
-distance – different SA2 codes are not numerically “close” to each other
-in any meaningful sense, so cross-location neighbour matching leans more
-on dwelling type and bond/rent figures than true geographic
-proximity.</p></li>
+<li><p>“Location Id” is an SA2 area code, not a name. The listings get
+their SA2 area codes from <code>get_area_codes.py</code>, and the two
+are joined in <code>join_listings_bonds.Rmd</code>.</p></li>
 <li><p>Bond data is quarterly while listings are monthly, so any merge
 will necessarily compare a single quarterly figure against up to three
 monthly listings figures.</p></li>
 </ol>
 </div>
 <div id="save" class="section level1">
-<h1>9. Save</h1>
+<h1>8. Save</h1>
 <pre class="r"><code>bonds &lt;- bonds %&gt;% arrange(TimeFrame, `Location Id`)
 write_csv(bonds, out_file)
 
