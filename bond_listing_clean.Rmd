@@ -18,7 +18,8 @@ library(lubridate)
 
 ```{r paths}
 
-data_dir <- "/Users/nalikadesai/Desktop/DATA201"
+# "." means the folder this Rmd is in (the repo folder), so it works on every computer
+data_dir <- "."
 
 in_file <- file.path(data_dir, 
                      "Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv")
@@ -27,17 +28,20 @@ listings_file <- file.path(data_dir,
                            "Christchurch Oct2025 to Jun2026 (cleaned).csv") 
 #Reads the listings file only to get its date range for filtering months from quarterly
 
-out_file <- file.path(data_dir, "Bond Data Quarterly (cleaned).csv")
+# same name as the file join_listings_bonds.Rmd reads
+out_file <- file.path(data_dir, "Bond_Data_Quarterly_(cleaned).csv")
 
-file.exists(in_file)
-file.exists(listings_file)
+stopifnot(file.exists(in_file))         # stop here if an input file is missing
+stopifnot(file.exists(listings_file))
 ```
 
 ```{r read}
+# Location Id is an area code, a label, so it is read as text.
+# Read as a number, area 200000 was saved as "2e+05".
 bonds <- read_csv(
-  "/Users/nalikadesai/Desktop/DATA201/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv",
+  in_file,
   na = c("", "NA", "NULL"),
-  show_col_types = FALSE
+  col_types = cols(`Location Id` = col_character(), .default = col_guess())
 )
 dim(bonds)
 ```
