@@ -5,20 +5,21 @@ date: "2026-09-13"
 output: html_document
 ---
 
+Cleans the Tenancy Services bond report, `Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv`,
+and writes `Bond_Data_Quarterly_(cleaned).csv`.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
-library(tidyr)
 library(readr)
-library(VIM)
 library(lubridate)
 ```
 
 # 1. Read the Data
 
-```{r paths}
-
-data_dir <- "/Users/nalikadesai/Desktop/DATA201"
+```{r settings}
+# file paths are relative: "." is the repo folder, so this works on every computer
+data_dir <- "."
 
 in_file <- file.path(data_dir, 
                      "Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv")
@@ -27,17 +28,23 @@ listings_file <- file.path(data_dir,
                            "Christchurch Oct2025 to Jun2026 (cleaned).csv") 
 #Reads the listings file only to get its date range for filtering months from quarterly
 
-out_file <- file.path(data_dir, "Bond Data Quarterly (cleaned).csv")
+# same name as the file join_listings_bonds.Rmd reads
+out_file <- file.path(data_dir, "Bond_Data_Quarterly_(cleaned).csv")
 
-file.exists(in_file)
-file.exists(listings_file)
+# the Location Id the bond report uses for its all-of-New-Zealand total
+national_total_id <- "-99"
+
+if (!file.exists(in_file)) stop("Input file not found: ", in_file)
+if (!file.exists(listings_file)) stop("Input file not found: ", listings_file)
 ```
 
 ```{r read}
+# Location Id is an area code, a label, so it is read as text.
+# Read as a number, area 200000 was saved as "2e+05".
 bonds <- read_csv(
-  "/Users/nalikadesai/Desktop/DATA201/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv",
+  in_file,
   na = c("", "NA", "NULL"),
-  show_col_types = FALSE
+  col_types = cols(`Location Id` = col_character(), .default = col_guess())
 )
 dim(bonds)
 ```
@@ -94,7 +101,7 @@ the merge specifically needs.
 
 ```{r location_diagnosis}
 sum(is.na(bonds$`Location Id`)) 
-sum(bonds$`Location Id` == -99, na.rm = TRUE)
+sum(bonds$`Location Id` == national_total_id, na.rm = TRUE)
 ```
 
 Missing Location Id. These rows are also blank on every rent
@@ -102,115 +109,92 @@ statistic, so they carry no usable information beyond the row existing at
 all, and there is no defensible value to impute a location with.
 
 ```{r location_drop}
-bonds <- bonds %>% filter(!is.na(`Location Id`), `Location Id` != -99)
+bonds <- bonds %>% filter(!is.na(`Location Id`), `Location Id` != national_total_id)
 dim(bonds)
 ```
 
-When Location Id == -99 it represents an "All of New Zealand"
+When Location Id is -99 it represents an "All of New Zealand"
 rollup, not a real SA2 area. Keeping it would mix a national total into
 what should be a location-level dataset, and it cannot be matched to
 anything in a location-based merge, so it is dropped rather than treated
 as a location like any of the other values.
 
-# 5. Types
+# 5. Number Of Beds
 
-```{r types}
-bonds <- bonds %>%
-  mutate(
-    `Dwelling Type` = as.factor(`Dwelling Type`),
-    `Number Of Beds` = as.factor(`Number Of Beds`),
-    `Location Id` = as.factor(`Location Id`)
-  )
-```
-
-# 6. Number Of Beds
-
-## 6.1 What the missingness looks like
+## 5.1 What the missing bed counts are
 
 ```{r beds-diagnose}
 sum(is.na(bonds$`Number Of Beds`))
 
 bonds %>%
   group_by(`Dwelling Type`) %>%
-  summarise(rows = n(), missing = sum(is.na(`Number Of Beds`)),
-            pct_missing = round(mean(is.na(`Number Of Beds`)) * 100, 1)) # For each Dwelling Type, counts total rows, how many are missing Number Of Beds, and what percent that is — to check if missingness is concentrated in one type or spread out evenly.
+  summarise(rows = n(), missing = sum(is.na(`Number Of Beds`)))
+
+# does the same area, quarter and dwelling type also have its own "ALL" total row?
+all_rows <- bonds %>%
+  filter(`Number Of Beds` == "ALL") %>%
+  select(TimeFrame, `Location Id`, `Dwelling Type`)
+
+bonds %>%
+  filter(is.na(`Number Of Beds`)) %>%
+  semi_join(all_rows, by = c("TimeFrame", "Location Id", "Dwelling Type")) %>%
+  nrow()
 ```
 
-This is distinct from the existing "ALL" factor level (a legitimate
-aggregate-across-beds row). These are individual rows where the specific
-bed-count breakdown was not reported, spread thinly across dwelling
-types rather than concentrated in one category or quarter.
+Almost every row with a missing bed count sits next to its own `"ALL"` total row and has
+its own bond counts. So a missing bed count is not a gap in a normal row. It is a
+separate group: bonds where the number of bedrooms was not recorded.
 
+## 5.2 Our approach (changed in Deliverable 6)
 
-## 6.2 Our approach
+In Deliverable 4 we filled these with kNN. kNN gave them a bed count the area already
+had, so the file ended up with two rows for the same area, quarter, dwelling type and bed
+count (779 of them), and 44 areas with two `"ALL"` total rows. The Rmd said there were no
+duplicates, but its own check printed 779.
 
-We discussed this as a group and decided to use kNN imputation for the missing bed counts. 
-It is one method among several, and we may test other approaches later to compare the
-results.
+Now we label them `"Not recorded"`, which is what they are. Nothing is guessed, and every
+row is unique again.
 
-As with price in the listings data, we impute using kNN: for each row
-missing "Number Of Beds", we find the most similar rows on dwelling type,
-location, bond counts, and rent statistics, and take their bed count. A
-house with similar rent and bond activity in the same area is a reasonable
-proxy for bedroom count.
+```{r beds-label}
+bonds <- bonds %>%
+  mutate(`Number Of Beds` = ifelse(is.na(`Number Of Beds`), "Not recorded",
+                                   `Number Of Beds`))
 
-```{r beds-knn}
-set.seed(2026)
-
-bonds <- kNN(
-  bonds,
-  variable = "Number Of Beds",
-  dist_var = c("Dwelling Type", "Location Id", "Total Bonds", "Active Bonds",
-               "Closed Bonds", "Median Rent", "Geometric Mean Rent",
-               "Upper Quartile Rent", "Lower Quartile Rent"),
-  k = 5,
-  imp_var = TRUE
-)
-
-bonds <- bonds %>% rename(beds_was_imputed = `Number Of Beds_imp`)
-
-sum(bonds$beds_was_imputed)
-sum(is.na(bonds$`Number Of Beds`))
+table(bonds$`Number Of Beds`)
 ```
 
-The original data had no separate "unimputed" copy of this column to
-preserve (unlike price, which stayed at 0% missing in some months and
-scattered elsewhere) -- every row now has a value, and `beds_was_imputed`
-marks which ones were filled in.
-
-# 7. Validation
+# 6. Validation
 
 ```{r checks}
-sum(duplicated(bonds[, c("TimeFrame", "Location Id", "Dwelling Type", "Number Of Beds")]))
+key_columns <- c("TimeFrame", "Location Id", "Dwelling Type", "Number Of Beds")
+
+if (anyDuplicated(bonds[, key_columns]) > 0) {
+  stop("Two rows share the same quarter, area, dwelling type and bed count")
+}
+if (anyNA(bonds$`Location Id`)) stop("Some rows have no Location Id")
+if (!all(bonds$TimeFrame %in% target_quarters)) stop("A row is outside the target quarters")
+
 range(bonds$TimeFrame)
 length(unique(bonds$`Location Id`))
 colSums(is.na(bonds))
 ```
 
-No duplicate rows on the natural key, "TimeFrame" falls entirely within
-the three target quarters, and no missing values remain in any column.
+If the knit reaches this point, there are no duplicate rows on the natural key, every
+row has an area, and every row is in one of the three target quarters. The rent columns
+can still be blank, because Tenancy Services leaves them out when an area has too few
+bonds.
 
+# 7. Known limitations
 
-# 8. Known limitations
+1. "Location Id" is an SA2 area code, not a name. The listings get their SA2 area
+   codes from `get_area_codes.py`, and the two are joined in `join_listings_bonds.Rmd`.
 
-1. "Location Id" is an SA2 area code, not a geographic coordinate or a
-   name. There is no location-name lookup in this file, so it cannot yet
-   be filtered to Christchurch-only rows or joined to the listings data
-   by name. A separate SA2-to-district lookup (e.g. from Stats NZ) will
-   be needed before next week's merge.
-   
-2. The kNN distance calculation treats `Location Id` as a categorical
-   match (same area vs. different area), not as spatial distance --
-   different SA2 codes are not numerically "close" to each other in any
-   meaningful sense, so cross-location neighbour matching leans more on
-   dwelling type and bond/rent figures than true geographic proximity.
-   
-3. Bond data is quarterly while listings are monthly, so any merge will
+2. Bond data is quarterly while listings are monthly, so any merge will
    necessarily compare a single quarterly figure against up to three
    monthly listings figures.
   
   
-# 9. Save
+# 8. Save
 
 ```{r save}
 bonds <- bonds %>% arrange(TimeFrame, `Location Id`)
