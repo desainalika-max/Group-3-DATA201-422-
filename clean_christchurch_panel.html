@@ -387,17 +387,24 @@ limitations</a></li>
 </ul>
 </div>
 
+<p>Cleans the combined Airbnb panel,
+<code>Christchurch Oct2025 to Jun2026 (combined).csv</code>, and writes
+<code>Christchurch Oct2025 to Jun2026 (cleaned).csv</code>.</p>
 <div id="read-the-data" class="section level1">
 <h1>1. Read the data</h1>
-<pre class="r"><code># &quot;.&quot; means the folder this Rmd is in (the repo folder), so it works on every computer.
-# Knitting, and running chunks in RStudio, both use that folder automatically.
-# Running chunks in VS Code: open the repo folder first (File &gt; Open Folder).
+<pre class="r"><code># file paths are relative: &quot;.&quot; is the repo folder, so this works on every computer
+# (in VS Code, open the repo folder first: File &gt; Open Folder)
 data_dir &lt;- &quot;.&quot;
-
 in_file  &lt;- file.path(data_dir, &quot;Christchurch Oct2025 to Jun2026 (combined).csv&quot;)
 out_file &lt;- file.path(data_dir, &quot;Christchurch Oct2025 to Jun2026 (cleaned).csv&quot;)
 
-stopifnot(file.exists(in_file))   # stop here if the input file is missing</code></pre>
+# cleaning rules, set once here instead of as numbers inside the code
+price_max        &lt;- 2000   # a nightly price above this is an error
+knn_k            &lt;- 10     # how many similar listings kNN uses to fill a price
+long_stay_nights &lt;- 30     # a minimum stay this long makes a listing long-stay
+random_seed      &lt;- 2026   # makes kNN give the same result every run
+
+if (!file.exists(in_file)) stop(&quot;Input file not found: &quot;, in_file)</code></pre>
 <pre class="r"><code>airbnb &lt;- read_csv(
   in_file,
   col_types = cols(id = col_character(), host_id = col_character(), .default = col_guess())
@@ -579,11 +586,13 @@ rows)</li>
 <li>kNN, with the same settings as before, only for listings with no
 real price in any month (518 rows)</li>
 </ol>
-<pre class="r"><code>set.seed(2026)
+<pre class="r"><code>set.seed(random_seed)
 
-# prices over $2,000 a night are errors (27 rows), so treat them as missing
-airbnb &lt;- airbnb %&gt;%
-  mutate(price_real = ifelse(price &gt; 2000, NA, price))
+# prices over price_max are errors, so treat them as missing
+sum(airbnb$price &gt; price_max, na.rm = TRUE)</code></pre>
+<pre><code>## [1] 27</code></pre>
+<pre class="r"><code>airbnb &lt;- airbnb %&gt;%
+  mutate(price_real = ifelse(price &gt; price_max, NA, price))
 
 # kNN guess for every missing price, same settings as Deliverable 4
 airbnb &lt;- airbnb %&gt;%
@@ -594,7 +603,7 @@ airbnb &lt;- kNN(airbnb,
               dist_var = c(&quot;room_type&quot;, &quot;latitude&quot;, &quot;longitude&quot;,
                            &quot;minimum_nights_filled&quot;,
                            &quot;calculated_host_listings_count&quot;, &quot;month_year&quot;),
-              k = 10, imp_var = FALSE)
+              k = knn_k, imp_var = FALSE)
 
 # each listing&#39;s own median price over the months it has a real price
 # (NA if the listing never has a real price)
@@ -621,7 +630,7 @@ table(airbnb$price_source)</code></pre>
 <pre><code>## 
 ##        kNN   observed own median 
 ##        518      18101      10176</code></pre>
-<pre class="r"><code>stopifnot(sum(is.na(airbnb$price_imputed)) == 0)   # every row now has a price</code></pre>
+<pre class="r"><code>if (anyNA(airbnb$price_imputed)) stop(&quot;Some rows still have no price&quot;)</code></pre>
 <p>The original <code>price</code> column is kept unchanged,
 <code>price_imputed</code> holds the filled version,
 <code>price_was_imputed</code> marks which rows differ, and the new
@@ -641,15 +650,32 @@ airbnb %&gt;%
 ## 5 Tuam Street delight, 4 bed 4 bath with C…       213          426. own median  
 ## 6 Tuam Street Treasure- 2 Bed 2 Bath              213          214  own median  
 ## 7 Central Charm 2 bed 2 bath with sunny Ba…       213          206. own median</code></pre>
-<pre class="r"><code># how many filled prices are still one value copied across a host&#39;s listings
-# at the same address and month (564 with kNN alone)
-airbnb %&gt;%
+<p><strong>Sanity check one row by hand.</strong> Take the 4-bedroom
+townhouse from the example above. Its real prices are $614, $615, $741,
+$490, $450 and $450. In order they are 450, 450, 490, 614, 615, 741, so
+its median is (490 + 614) / 2 = <strong>$552</strong>. Its filled
+December price should be exactly that.</p>
+<pre class="r"><code>townhouse_december &lt;- airbnb %&gt;%
+  filter(id == &quot;967760129147377073&quot;, month_year == &quot;December 2025&quot;)
+
+townhouse_december$price_imputed</code></pre>
+<pre><code>## [1] 552</code></pre>
+<pre class="r"><code>if (townhouse_december$price_imputed != 552) {
+  stop(&quot;The townhouse&#39;s filled December price is not its own median of $552&quot;)
+}</code></pre>
+<pre class="r"><code># filled prices that are one value copied across a host&#39;s listings at the same
+# address and month: first with kNN alone, then with the new method
+copies &lt;- airbnb %&gt;%
   filter(price_was_imputed) %&gt;%
   group_by(host_id, latitude, longitude, month_year) %&gt;%
-  mutate(listings = n(), different_prices = n_distinct(price_imputed)) %&gt;%
-  ungroup() %&gt;%
-  filter(listings &gt; 1, different_prices == 1) %&gt;%
-  nrow()</code></pre>
+  mutate(listings = n(),
+         knn_prices = n_distinct(price_knn),
+         new_prices = n_distinct(price_imputed)) %&gt;%
+  ungroup()
+
+sum(copies$listings &gt; 1 &amp; copies$knn_prices == 1)   # kNN alone</code></pre>
+<pre><code>## [1] 564</code></pre>
+<pre class="r"><code>sum(copies$listings &gt; 1 &amp; copies$new_prices == 1)   # now</code></pre>
 <pre><code>## [1] 32</code></pre>
 <pre class="r"><code># the helper columns are not needed in the saved file
 airbnb &lt;- airbnb %&gt;% select(-price_real, -price_knn, -own_median_price)</code></pre>
@@ -679,8 +705,8 @@ airbnb &lt;- airbnb %&gt;% select(-price_real, -price_knn, -own_median_price)</c
   group_by(id) %&gt;%
   mutate(months_present = n_distinct(month_year)) %&gt;%
   ungroup() %&gt;%
-  mutate(in_all_9_months = months_present == 9,
-         long_stay = minimum_nights_filled &gt;= 30,
+  mutate(in_all_9_months = months_present == length(month_levels),
+         long_stay = minimum_nights_filled &gt;= long_stay_nights,
          name = trimws(name))
 
 table(airbnb$months_present)</code></pre>
@@ -698,7 +724,9 @@ excluding from tourist-price analysis.</p>
 </div>
 <div id="validation" class="section level1">
 <h1>10. Validation</h1>
-<pre class="r"><code>stopifnot(sum(duplicated(airbnb[, c(&quot;id&quot;, &quot;month_year&quot;)])) == 0)   # one row per listing per month
+<pre class="r"><code>if (anyDuplicated(airbnb[, c(&quot;id&quot;, &quot;month_year&quot;)]) &gt; 0) {
+  stop(&quot;A listing appears twice in the same month&quot;)
+}
 range(airbnb$latitude)</code></pre>
 <pre><code>## [1] -43.86751 -43.41634</code></pre>
 <pre class="r"><code>range(airbnb$longitude)</code></pre>

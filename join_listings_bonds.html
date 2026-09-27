@@ -356,6 +356,8 @@ area code and quarter</h3>
 </div>
 
 
+<p>Joins the cleaned listings to the cleaned bond totals by area code
+and quarter, and writes <code>Christchurch_with_bonds.csv</code>.</p>
 <p>Run the files in this order:
 <code>clean_christchurch_panel.Rmd</code>,
 <code>bond_listing_clean.Rmd</code>, then this file, then
@@ -388,7 +390,7 @@ dim(listings)</code></pre>
 <pre class="r"><code>dim(area_codes)</code></pre>
 <pre><code>## [1] 28795    27</code></pre>
 <pre class="r"><code>dim(bonds)</code></pre>
-<pre><code>## [1] 26991    13</code></pre>
+<pre><code>## [1] 26991    12</code></pre>
 </div>
 <div id="add-the-area-codes" class="section level1">
 <h1>2. Add the area codes</h1>
@@ -404,12 +406,13 @@ codes depend only on coordinates, and the cleaning does not change any
 coordinates.</p>
 <pre class="r"><code>area_codes &lt;- area_codes %&gt;% select(id, month_year, area_code)
 
-# one area code per listing per month, so the join cannot add rows
-stopifnot(sum(duplicated(area_codes[, c(&quot;id&quot;, &quot;month_year&quot;)])) == 0)
+if (anyDuplicated(area_codes[, c(&quot;id&quot;, &quot;month_year&quot;)]) &gt; 0) {
+  stop(&quot;A listing has two area codes in the same month, so the join would add rows&quot;)
+}
 
 listings &lt;- listings %&gt;% left_join(area_codes, by = c(&quot;id&quot;, &quot;month_year&quot;))
 
-stopifnot(sum(is.na(listings$area_code)) == 0)   # every listing got an area code</code></pre>
+if (anyNA(listings$area_code)) stop(&quot;Some listings have no area code&quot;)</code></pre>
 </div>
 <div id="give-every-listing-its-quarter" class="section level1">
 <h1>3. Give every listing its quarter</h1>
@@ -423,23 +426,16 @@ holds.</p>
     month_year %in% c(&quot;April 2026&quot;, &quot;May 2026&quot;, &quot;June 2026&quot;)            ~ as.Date(&quot;2026-04-01&quot;)
   ))
 
-stopifnot(sum(is.na(listings$quarter)) == 0)   # every month got a quarter</code></pre>
+if (anyNA(listings$quarter)) stop(&quot;Some months were not given a quarter&quot;)</code></pre>
 </div>
 <div id="keep-one-bond-row-per-area-and-quarter" class="section level1">
 <h1>4. Keep one bond row per area and quarter</h1>
 <p>The bond file has a row for every dwelling type and bed count, so an
 area has about five rows per quarter. We keep the area total, which is
-the row where both are <code>&quot;ALL&quot;</code>. The kNN step in
-<code>bond_listing_clean.Rmd</code> filled some missing bed counts with
-<code>&quot;ALL&quot;</code>, which makes those rows look like totals, so imputed
-rows are dropped too.</p>
-<pre class="r"><code># kNN rows that look like area totals, dropped below
-sum(bonds$beds_was_imputed &amp; bonds$`Dwelling Type` == &quot;ALL&quot; &amp; bonds$`Number Of Beds` == &quot;ALL&quot;)</code></pre>
-<pre><code>## [1] 44</code></pre>
+the row where both are <code>&quot;ALL&quot;</code>.</p>
 <pre class="r"><code>bond_totals &lt;- bonds %&gt;%
   filter(`Dwelling Type` == &quot;ALL&quot;,
-         `Number Of Beds` == &quot;ALL&quot;,
-         beds_was_imputed == FALSE) %&gt;%
+         `Number Of Beds` == &quot;ALL&quot;) %&gt;%
   select(area_code                  = `Location Id`,
          quarter                    = TimeFrame,
          bond_total                 = `Total Bonds`,
@@ -453,8 +449,9 @@ sum(bonds$beds_was_imputed &amp; bonds$`Dwelling Type` == &quot;ALL&quot; &amp; 
 
 nrow(bond_totals)</code></pre>
 <pre><code>## [1] 4865</code></pre>
-<pre class="r"><code># one total per area and quarter, so the join cannot add rows
-stopifnot(sum(duplicated(bond_totals[, c(&quot;area_code&quot;, &quot;quarter&quot;)])) == 0)</code></pre>
+<pre class="r"><code>if (anyDuplicated(bond_totals[, c(&quot;area_code&quot;, &quot;quarter&quot;)]) &gt; 0) {
+  stop(&quot;An area has two total rows in the same quarter, so the join would add rows&quot;)
+}</code></pre>
 </div>
 <div id="join" class="section level1">
 <h1>5. Join</h1>
@@ -465,7 +462,7 @@ from all of New Zealand.</p>
   left_join(bond_totals, by = c(&quot;area_code&quot;, &quot;quarter&quot;)) %&gt;%
   mutate(has_bond_data = !is.na(bond_total))
 
-stopifnot(nrow(joined) == nrow(listings))   # the join adds no rows
+if (nrow(joined) != nrow(listings)) stop(&quot;The join changed the number of rows&quot;)
 
 table(joined$has_bond_data)</code></pre>
 <pre><code>## 
@@ -512,8 +509,38 @@ total row we join to.</li>
 rows have no bond rows at all that quarter, so they belong under reason
 2.</p>
 </div>
+<div id="sanity-check-one-row-by-hand" class="section level1">
+<h1>7. Sanity check one row by hand</h1>
+<p>Take one Christchurch Central (326600) listing in April 2026. April
+is in the quarter that starts on 2026-04-01, so the listing should carry
+the bond total for area 326600 in that quarter. We look that row up
+straight from the raw bond report, not from our cleaned file, and
+compare the two.</p>
+<pre class="r"><code>one_listing &lt;- joined %&gt;%
+  filter(area_code == &quot;326600&quot;, month_year == &quot;April 2026&quot;) %&gt;%
+  head(1)
+
+one_listing %&gt;% select(id, month_year, quarter, bond_active, median_rent_weekly)</code></pre>
+<pre><code>## # A tibble: 1 × 5
+##   id                  month_year quarter    bond_active median_rent_weekly
+##   &lt;chr&gt;               &lt;chr&gt;      &lt;date&gt;           &lt;dbl&gt;              &lt;dbl&gt;
+## 1 1006152691713709590 April 2026 2026-04-01          42                537</code></pre>
+<pre class="r"><code>raw_total &lt;- raw_bonds %&gt;%
+  filter(`Location Id` == &quot;326600&quot;, TimeFrame == &quot;2026-04-01&quot;,
+         `Dwelling Type` == &quot;ALL&quot;, `Number Of Beds` == &quot;ALL&quot;)
+
+raw_total %&gt;% select(TimeFrame, `Location Id`, `Active Bonds`, `Median Rent`)</code></pre>
+<pre><code>## # A tibble: 1 × 4
+##   TimeFrame  `Location Id` `Active Bonds` `Median Rent`
+##   &lt;chr&gt;      &lt;chr&gt;         &lt;chr&gt;          &lt;chr&gt;        
+## 1 2026-04-01 326600        42             537</code></pre>
+<pre class="r"><code>if (one_listing$median_rent_weekly != as.numeric(raw_total$`Median Rent`) ||
+    one_listing$bond_active != as.numeric(raw_total$`Active Bonds`)) {
+  stop(&quot;The joined bond values do not match the raw bond report for this row&quot;)
+}</code></pre>
+</div>
 <div id="save" class="section level1">
-<h1>7. Save</h1>
+<h1>8. Save</h1>
 <pre class="r"><code>write_csv(joined, &quot;Christchurch_with_bonds.csv&quot;)
 
 dim(joined)</code></pre>

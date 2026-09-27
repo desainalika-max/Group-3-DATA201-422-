@@ -1,14 +1,21 @@
-> **This document was produced with Cursor.** The pipeline description and the audit of coding practices were written from the current contents of the scripts named below, not from an idealised version of the project.
+> **AI used.** The first draft of this document was produced with **Cursor**, from the
+> code as it was before the Deliverable 6 fixes. It was then updated with **Claude
+> (Claude Opus 5.5, in Claude Code)** so that it matches the code after the fixes.
+> Section 6 lists every place where the first draft and the code disagreed, and how
+> each one was fixed.
 
 # Design principles for the Christchurch Airbnb–bond pipeline
 
-This note describes the data pipeline that turns Inside Airbnb listings and Tenancy Services bond statistics into the answers in `airbnb_vs_rentals.Rmd`. It also records how the code currently sits against four lecture practices: relative paths, named constants, fail-loud checks, and one-row sanity checks.
+This document describes the pipeline that turns Inside Airbnb listings and Tenancy
+Services bond data into the answers in `airbnb_vs_rentals.Rmd`. It covers the inputs,
+the outputs, the main steps, and the coding practices from the Week 9 lectures that
+the code follows.
 
-The scripts, in order, are:
+The files run in this order:
 
 1. `clean_christchurch_panel.Rmd`
-2. `bond_listing_clean.Rmd`
-3. `get_area_codes.py`
+2. `get_area_codes.py` (only when listing coordinates change, because it needs an API key)
+3. `bond_listing_clean.Rmd`
 4. `join_listings_bonds.Rmd`
 5. `airbnb_vs_rentals.Rmd`
 
@@ -16,55 +23,36 @@ The scripts, in order, are:
 
 ## 1. Inputs
 
-The pipeline starts from two source tables, plus one derived lookup that is built mid-pipeline.
-
 | Input | Source | Used by |
 | --- | --- | --- |
-| `Christchurch Oct2025 to Jun2026 (combined).csv` | Concatenated Inside Airbnb monthly `listings.csv` extracts for Christchurch, October 2025 – June 2026 | `clean_christchurch_panel.Rmd` |
-| `Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv` | MBIE Tenancy Services detailed quarterly bond report | `bond_listing_clean.Rmd` |
-| Koordinates Query API, layer `123515` (Stats NZ SA2 2026) | External geocoding service; key from `KOORDINATES_API_KEY` | `get_area_codes.py` |
+| `Christchurch Oct2025 to Jun2026 (combined).csv` | Nine Inside Airbnb monthly `listings.csv` files, Christchurch rows only, stacked in Deliverable 3 | `clean_christchurch_panel.Rmd` |
+| `Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv` | MBIE Tenancy Services detailed quarterly bond report | `bond_listing_clean.Rmd`, and `join_listings_bonds.Rmd` for its checks |
+| Koordinates Query API, layer `123515` (Stats NZ SA2 2026) | Online service. The key is kept in `.env`, not in git | `get_area_codes.py` |
 
-`bond_listing_clean.Rmd` also reads the **cleaned listings** file, not as a second source of bond information, but to take `min(month_date)` and `max(month_date)` so the bond window is aligned to the panel rather than hardcoded as a list of quarters.
-
-The later steps take files produced earlier in the same repo:
-
-| Intermediate input | Produced by | Used by |
-| --- | --- | --- |
-| `Christchurch Oct2025 to Jun2026 (cleaned).csv` | `clean_christchurch_panel.Rmd` | `get_area_codes.py` (and the date-range read in `bond_listing_clean.Rmd`) |
-| `Christchurch_with_area_codes.csv` | `get_area_codes.py` | `join_listings_bonds.Rmd` |
-| `Bond_Data_Quarterly_(cleaned).csv` | intended output of `bond_listing_clean.Rmd` | `join_listings_bonds.Rmd` |
-| `Christchurch_with_bonds.csv` | `join_listings_bonds.Rmd` | `airbnb_vs_rentals.Rmd` |
-
-**Mismatch to flag:** `bond_listing_clean.Rmd` writes `Bond Data Quarterly (cleaned).csv` (spaces, no extra underscores). `join_listings_bonds.Rmd` reads `Bond_Data_Quarterly_(cleaned).csv`. The file currently in the repo matches the **join** name, not the **write** name in the cleaning notebook. Knitting `bond_listing_clean.Rmd` as written would not produce the filename the join step expects.
-
-A second mismatch: `bond_listing_clean.Rmd` points `data_dir` at `/Users/nalikadesai/Desktop/DATA201`, which is **outside** this repository (`Group-3-DATA201-422-`). The detailed quarterly CSV now also sits in the repo root. The notebook as committed does not read that in-repo copy.
-
----
+The input files are never edited by hand. Every change is made by code.
 
 ## 2. Outputs
 
-### Intermediate tables
+### Files made along the way
 
-| File | What it is |
-| --- | --- |
-| `Christchurch Oct2025 to Jun2026 (cleaned).csv` | Panel of listing-months with types fixed, structural missingness handled, kNN-imputed prices, and panel flags |
-| `Bond Data Quarterly (cleaned).csv` / `Bond_Data_Quarterly_(cleaned).csv` | Bond rows for the overlapping quarters, with missing bed counts imputed and `-99` / blank locations dropped |
-| `Christchurch_with_area_codes.csv` | Cleaned listings plus `area_code` (SA2) from Koordinates |
-| `Christchurch_with_bonds.csv` | Left-joined listing-months with area-level quarterly bond totals |
+| File | Made by | What it is | Used by |
+| --- | --- | --- | --- |
+| `Christchurch Oct2025 to Jun2026 (cleaned).csv` | `clean_christchurch_panel.Rmd` | One row per listing per month, with fixed types, filled prices and flags | `get_area_codes.py`, `bond_listing_clean.Rmd` (for its date range), `join_listings_bonds.Rmd` |
+| `Christchurch_with_area_codes.csv` | `get_area_codes.py` | The listings plus an `area_code` column | `join_listings_bonds.Rmd`, which takes only `area_code` |
+| `Bond_Data_Quarterly_(cleaned).csv` | `bond_listing_clean.Rmd` | Bond rows for the three quarters that overlap the listings | `join_listings_bonds.Rmd` |
+| `Christchurch_with_bonds.csv` | `join_listings_bonds.Rmd` | Each listing-month with its area's bond totals for that quarter | `airbnb_vs_rentals.Rmd` |
 
-### Analysis output
+Each Rmd also knits to an HTML report with the same name.
 
-`airbnb_vs_rentals.Rmd` does not write a new CSV. It knits to HTML and reports three results:
+### Final answers (`airbnb_vs_rentals.html`)
 
-1. Median observed Airbnb price in Christchurch Central (SA2 `326600`): **$238 per night**.
-2. Largest short-term vs long-term price gap among entire homes with bond data: **Heathcote Ward, location `332700`, $255 per night**.
-3. Airbnbs per 100 active bonds in Apr–Jun 2026, among areas with bond data: **8**.
+1. Median Airbnb price in Christchurch Central (SA2 `326600`): **$236 a night**, against
+   $211 for all of Christchurch. Each listing is counted once.
+2. Largest gap between an Airbnb whole home and long-term rent: **area `332700`,
+   Heathcote Ward, $259 a night** ($347 Airbnb against $89 rent).
+3. Airbnbs per 100 long-term rentals, June 2026: **7**. Christchurch Central has 283.
 
-Those numbers live in the notebook as written results, not as a separate saved table.
-
-**Mismatch to flag:** `airbnb_vs_rentals.Rmd` contains the full document **twice**. The second copy adds a Banks Peninsula caveat and a note that bedrooms cannot be compared. A knit of the file as it stands would render two copies of the same analysis.
-
----
+These numbers are printed by the code (inline R), not typed into the text.
 
 ## 3. Main steps
 
@@ -73,228 +61,185 @@ combined listings CSV
         │
         ▼
 clean_christchurch_panel.Rmd
-  • read ids as character
-  • drop empty license column
-  • ordered month factor + month_date
-  • structural zeros for reviews_per_month
-  • fill host_name / minimum_nights within listing
-  • kNN price (k = 10); keep original price
-  • flags: months_present, in_all_9_months, long_stay
+  • read ids as text
+  • drop the empty license column
+  • months as an ordered factor, plus a real date
+  • 0 reviews a month for listings with no reviews
+  • fill host_name and minimum_nights from the same listing
+  • price: the real price, else the listing's own median price,
+    else kNN (only for listings that never show a price)
+  • flags: price_was_imputed, price_source, in_all_9_months, long_stay
+  • check by hand: one townhouse's filled price is its own median ($552)
         │
-        ├──────────────────────────────────► cleaned listings CSV
-        │                                            │
-        │                                            ▼
-        │                                   get_area_codes.py
-        │                                     unique lat/lng
-        │                                     Koordinates SA2 lookup
-        │                                     multiprocessing + checkpoints
-        │                                            │
-        │                                            ▼
-        │                                   listings + area_code CSV
-        │                                            │
-quarterly bonds CSV                                  │
-        │                                            │
-        ▼                                            │
-bond_listing_clean.Rmd                               │
-  • overlap quarters with listings date range        │
-  • drop NA and -99 Location Id                      │
-  • kNN Number Of Beds (k = 5)                       │
-        │                                            │
-        ▼                                            │
-cleaned bonds CSV ───────────────────────────────────┤
-                                                     ▼
-                                          join_listings_bonds.Rmd
-                                            • map month → quarter
-                                            • keep bond ALL/ALL totals
-                                              (drop imputed ALL beds)
-                                            • left join on area_code + quarter
-                                                     │
-                                                     ▼
-                                          Christchurch_with_bonds.csv
-                                                     │
-                                                     ▼
-                                          airbnb_vs_rentals.Rmd
-                                            Q1 Central median price
-                                            Q2 largest nightly gap
-                                            Q3 Airbnbs vs active bonds
+        ▼
+cleaned listings CSV ─────────────────────────┐
+        │                                     │
+        ▼                                     │
+get_area_codes.py                             │
+  • check first: Redcliffs must be 332100     │
+  • look up each unique coordinate            │
+  • save progress every 500 coordinates       │
+  • stop if any listing has no area code      │
+        │                                     │
+        ▼                                     │
+listings + area_code CSV                      │
+                                              │
+quarterly bonds CSV                           │
+        │                                     │
+        ▼                                     │
+bond_listing_clean.Rmd                        │
+  • keep the quarters that overlap the listings
+  • drop blank and -99 (all of NZ) Location Ids
+  • blank bed counts become "Not recorded"    │
+  • stop if two rows share the same key       │
+        │                                     │
+        ▼                                     ▼
+cleaned bonds CSV ──────────►  join_listings_bonds.Rmd
+                                 • attach area_code by listing id and month
+                                 • give each month its quarter
+                                 • keep the one "ALL"/"ALL" total per area and quarter
+                                 • left join on area_code + quarter
+                                 • check by hand: one Central listing's bond row
+                                   matches the raw bond report
+                                              │
+                                              ▼
+                                 Christchurch_with_bonds.csv
+                                              │
+                                              ▼
+                                 airbnb_vs_rentals.Rmd
+                                   one price per listing, then:
+                                   Q1 Central median price
+                                   Q2 largest nightly gap
+                                   Q3 Airbnbs per 100 rentals
 ```
 
-Design choices that matter for later steps:
+Design choices that later steps rely on:
 
-- **Types as labels.** Listing `id`, `host_id`, and later `area_code` / `Location Id` are read as character so large integers are not rounded.
-- **Do not overwrite raw price.** `price` stays as observed (including gaps and the 27 values above $2,000). Analysis that wants “real” prices filters `price_was_imputed == FALSE`.
-- **Quarterly vs monthly.** Listings are assigned the first day of their quarter so they can join to bond `TimeFrame`.
-- **Join grain.** Bond totals are the row where dwelling type and beds are both `"ALL"` and `beds_was_imputed` is false. The join is a **left** join so unmatched Airbnbs are kept and flagged with `has_bond_data`.
-- **Units.** Bond rents are weekly; Airbnb prices are per night. The analysis divides weekly rent by 7 before subtracting.
+- **IDs are text.** Listing `id`, `host_id`, `area_code` and `Location Id` are read as
+  text, so long numbers are not rounded and area 200000 is not saved as `2e+05`.
+- **Keep the original, flag the guess.** `price` is never overwritten. The filled value
+  goes in `price_imputed`, and `price_was_imputed` and `price_source` say how it was filled.
+  The answers use real prices only.
+- **Monthly to quarterly.** Each listing month gets the first day of its quarter, so it can
+  join to the bond `TimeFrame`.
+- **Left join.** Every Airbnb row is kept. Rows with no bond data are flagged with
+  `has_bond_data`, and section 6 of the join Rmd counts why.
+- **Units.** Rents are weekly and prices are per night, so rent is divided by
+  `days_per_week` (7) before comparing.
+- **One listing, one vote.** Medians first take each listing's own median, so a listing
+  seen in six months does not count six times.
 
 ---
 
-## 4. Coding and software strategies (lecture practices vs this repo)
+## 4. Coding practices from the lectures
 
-The lectures we are citing here are the ones that cover **relative vs absolute paths**, **named constants instead of magic numbers**, **self-documenting code and assertions over comments**, and **hand-checking one row before trusting the full run**. Each subsection states the practice, then what the code actually does.
+### 4.1 Relative file paths
 
-### 4.1 Relative file paths vs absolute file paths
+**Lecture:** never use a path from your own computer. Use paths relative to the project
+folder, so the code runs on anyone's computer.
 
-**Lecture practice:** never hardcode a personal machine path. Paths should be relative to the project root so the same script runs on every computer.
+**The code:** every file reads and writes in the repo folder (`data_dir <- "."` in the
+cleaning Rmds, plain file names elsewhere). There is no `/Users/...` path anywhere. The
+bond Rmd writes `Bond_Data_Quarterly_(cleaned).csv`, the same name the join reads.
 
-**Where the code follows it**
+### 4.2 No magic numbers: settings at the top
 
-- `clean_christchurch_panel.Rmd` sets `data_dir <- "."` and builds `in_file` / `out_file` with `file.path`. The comment in that chunk is explicit that this is so the notebook works on every machine.
-- `get_area_codes.py` uses `INPUT_FILE` and `OUTPUT_FILE` as filenames in the current working directory, not `/Users/...`.
-- `join_listings_bonds.Rmd` and `airbnb_vs_rentals.Rmd` read and write CSV names in the working directory (the repo folder when knitted from there).
+**Lecture:** give numbers that control the code a name, and set them at the top of the
+file.
 
-**Where the code does not follow it**
+**The code:** each file starts with a short description, then a `settings` block:
 
-- `bond_listing_clean.Rmd` hardcodes Nalika’s machine:
+| File | Settings |
+| --- | --- |
+| `clean_christchurch_panel.Rmd` | `price_max` (2000), `knn_k` (10), `long_stay_nights` (30), `random_seed` (2026) |
+| `bond_listing_clean.Rmd` | `national_total_id` (-99) |
+| `get_area_codes.py` | `LAYER_ID`, `N_PROCESSES` (20), `TIMEOUT_SECONDS` (15), `CHECKPOINT_EVERY` (500), and the Redcliffs check point |
+| `airbnb_vs_rentals.Rmd` | `central_area` ("326600"), `big_host`, `min_listings` (20), `count_month` ("June 2026"), `days_per_week` (7) |
 
-  ```r
-  data_dir <- "/Users/nalikadesai/Desktop/DATA201"
-  ```
+The nine month names and the three quarter dates are still written out in full. We kept
+them that way on purpose, because the team agreed to write simple code that every member
+can read.
 
-  That is exactly the pattern the lecture forbids. It also points **one folder above the repo**, not at the project root.
+### 4.3 Checks that stop the code, not comments
 
-- The same notebook then **ignores** `in_file` and reads the CSV with a second absolute path:
+**Lecture:** instead of a comment such as "must not have duplicates", write a check that
+stops the code with an error.
 
-  ```r
-  bonds <- read_csv(
-    "/Users/nalikadesai/Desktop/DATA201/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv",
-    ...
-  )
-  ```
-
-  So even if `data_dir` were fixed, this `read_csv` would still be machine-specific.
-
-- Relative paths here mean “current working directory”, not “directory of this file”. `get_area_codes.py` will fail if it is launched from another folder. That is weaker than resolving paths from the project root, but it is still portable if the team always runs from the repo.
-
-**Verdict:** four of five scripts are portable; `bond_listing_clean.Rmd` currently is not. This document does not claim the whole pipeline is path-safe.
-
-### 4.2 Avoiding magic numbers
-
-**Lecture practice:** parameters such as `k` in kNN, or the number of parallel processes, should be named. Visible constants belong near the top of the file, not as unexplained numbers in the middle of a call.
-
-**Where the code follows it**
-
-- `get_area_codes.py` names `LAYER_ID = 123515` at the top. The layer is still an opaque Stats NZ identifier, but it is not buried inside the request URL.
-- `API_KEY` is loaded from the environment, not pasted into the script.
-- `month_levels` in `clean_christchurch_panel.Rmd` names the nine panel months in one place (though the `case_when` that builds `month_date` still repeats the same strings).
-
-**Where the code does not follow it**
-
-These values are used in place, with no named constant at the top of the file:
-
-| Value | Where | What it controls |
-| --- | --- | --- |
-| `k = 10` | `clean_christchurch_panel.Rmd` | kNN neighbours for price |
-| `k = 5` | `bond_listing_clean.Rmd` | kNN neighbours for beds |
-| `processes=20` | `get_area_codes.py` | parallel API workers |
-| `timeout=15` | `get_area_codes.py` | HTTP timeout (seconds) |
-| `i % 500` | `get_area_codes.py` | checkpoint frequency |
-| `2000` | listings clean + analysis | price treated as error |
-| `9` | `in_all_9_months` | complete panel length |
-| `30` | `long_stay` | nights that count as long-stay |
-| `-99` | bond clean | national rollup location |
-| `7` | `airbnb_vs_rentals.Rmd` | days in a week for rent conversion |
-| `20` | `airbnb_vs_rentals.Rmd` | minimum listings to rank an SA2 |
-| `"326600"` | `airbnb_vs_rentals.Rmd` | Christchurch Central |
-| `"2026-04-01"` | `airbnb_vs_rentals.Rmd` | “latest” quarter |
-
-Some of these are explained in nearby prose (`$2,000`, 30 nights, `-99`). That is better than a silent `k = 10`, but it is still not the lecture pattern of a named constant at the top (`knn_k <- 10`, `n_processes = 20`).
-
-The two kNN calls also use **different** `k` without a shared, named reason in code. The notebooks say the team chose kNN; they do not say why 10 vs 5.
-
-**Verdict:** the Python script is the closest to the lecture (named layer and files at the top). The R notebooks still bury the parameters the lecture uses as the example (`k`, process count).
-
-### 4.3 Self-documenting code and assertions over comments
-
-**Lecture practice:** prefer code that fails loudly (`stop()` / `raise`) over comments that describe an expectation without enforcing it.
-
-**Where the code follows it**
-
-- `get_area_codes.py` does `API_KEY = os.environ["KOORDINATES_API_KEY"]`. If the key is missing, Python raises `KeyError` immediately. That is the lecture’s “fail loudly” pattern.
-- `area_code` is created as `dtype="object"` so later string codes cannot silently fail a numeric column. The comment next to that line explains a real constraint; the `dtype` is what enforces it.
-- Several operations are named so the intent is in the data, not only in markdown: `price_was_imputed`, `beds_was_imputed`, `has_bond_data`, `minimum_nights_filled`, `in_all_9_months`.
-
-**Where the code does not follow it**
-
-Checks are printed, or described in comments, and the script continues either way:
+**The code:** every check that used to be a printed number with `# expect 0` is now an
+`if (...) stop("...")`, for example:
 
 ```r
-# clean_christchurch_panel.Rmd
-sum(duplicated(airbnb[, c("id", "month_year")]))   # expect 0
-
-# join_listings_bonds.Rmd
-sum(is.na(listings$quarter))   # expect 0
-sum(duplicated(bond_totals[, c("area_code", "quarter")]))   # expect 0
-nrow(joined) == nrow(listings)   # expect TRUE, the join adds no rows
+if (anyDuplicated(airbnb[, c("id", "month_year")]) > 0) {
+  stop("A listing appears twice in the same month")
+}
 ```
 
-None of these use `stopifnot()` / `stop()`. A duplicate listing-month or a many-to-many join would still be written to CSV.
+Checks like this cover: the input file exists, every row has a price after filling, one
+row per listing per month, one bond row per key, one bond total per area and quarter,
+every listing gets an area code and a quarter, and the join does not add rows.
 
-`file.exists(in_file)` in the cleaning notebooks is displayed, not asserted. A missing file then fails later inside `read_csv`, which is loud, but the existence check itself does not abort.
+`get_area_codes.py` also stops with an error if any listing has no area code. It saves
+its file first, so the API calls already made are not lost.
 
-`get_area_codes.py` **swallows** request failures:
+### 4.4 Sanity check one row by hand
 
-```python
-except Exception as e:
-    print(f"Failed for {lat}, {lng}: {e}")
-    return None
-```
+**Lecture:** work out the answer for one row by hand and compare it with what the code
+gives.
 
-A bad key, a wrong layer, or a swapped lat/lng can produce `None` area codes and a finished CSV. That is the opposite of failing loudly. The print at the end (`Missing area codes: n out of N`) is a diagnostic, not a halt.
+**The code:** there are three one-row checks, and each one stops the run if it fails.
 
-`bond_listing_clean.Rmd` comments that there are “no duplicate rows” and “no missing values remain”. Those are narrative claims after `sum(duplicated(...))` and `colSums(is.na(bonds))`. They are not assertions.
+| Step | Row checked | Worked out by hand |
+| --- | --- | --- |
+| Area codes (`get_area_codes.py`) | The "Relaxing Redcliffs" listing | Must be area `332100`, Redcliffs. A swapped latitude and longitude gives a different answer. Also described in the README. |
+| Price filling (`clean_christchurch_panel.Rmd`) | The 4-bedroom townhouse, December 2025 | Real prices 450, 450, 490, 614, 615, 741, so the median is (490 + 614) / 2 = $552 |
+| Join (`join_listings_bonds.Rmd`) | One Central (326600) listing, April 2026 | Its bond values must equal the raw report's "ALL"/"ALL" row for 326600 in the 2026-04-01 quarter (42 active bonds, $537 weekly rent) |
 
-**Verdict:** the API key lookup is a genuine assertion. Most pipeline “expect 0 / expect TRUE” lines are comments plus printed numbers, which is what the lecture asks us not to treat as validation.
+### 4.5 File headers
 
-### 4.4 Sanity-check one row by hand before trusting the pipeline at scale
+**Lecture:** start each file with a line or two about what it does, then its settings,
+packages and inputs.
 
-**Lecture practice:** pick one row (or one known case), compute the expected result by hand, and compare it to the code’s output before running the full dataset.
-
-**Where the code / project follows it**
-
-The README records a one-location geocoding check: a known Redcliffs listing should return SA2 `332100`. That is the lecture pattern applied to the step that is easiest to get silently wrong (`x=longitude`, `y=latitude`). It is documented as a pre-run check, not as an automated test in `get_area_codes.py`.
-
-`airbnb_vs_rentals.Rmd` does **robustness checks** on Q1 (observed vs imputed medians; listing-months vs one row per listing) and reports that $238, $236, and $237 sit close together. That is related, but it is a sensitivity check on an aggregate, not a hand calculation of a single listing’s price.
-
-`join_listings_bonds.Rmd` decomposes unmatched rows into three counted reasons (boundary splits, unpublished quiet areas, missing total row). That is a reconciliation of join coverage, not a one-row expected-join check.
-
-`clean_christchurch_panel.Rmd` inspects latitude/longitude ranges and states they fall inside Christchurch including Banks Peninsula. Again, a global range check, not one known address.
-
-**Where it does not follow it**
-
-There is no scripted check of the form: “listing `id` X in October 2025 should have `price_imputed` = … because its ten neighbours were …”. kNN is trusted from `VIM::kNN` plus grouped median tables.
-
-There is no one-row check that a known listing in SA2 `326600` in April 2026 picks up the bond `ALL`/`ALL` row for `2026-04-01`.
-
-The Redcliffs check lives in `README.md`, not in `get_area_codes.py`, so a later edit to `LAYER_ID` or to `x`/`y` would not fail a test; someone would have to repeat the check by hand.
-
-**Verdict:** the geocoding step has a documented one-case check, which matches the lecture. Imputation and the join do not. This document does not claim the whole pipeline was hand-verified row-by-row.
+**The code:** every file starts with one or two lines naming its input and output files,
+followed by its settings block and its packages.
 
 ---
 
-## 5. Other strategies the project actually uses
+## 5. Other choices the project makes
 
-These are not the four lecture items, but they are consistent choices in the code:
-
-- **Keep raw columns.** Observed `price` and (for listings) unfilled `minimum_nights` stay in the file so later work can opt out of imputation.
-- **Flag what was filled.** `price_was_imputed` and `beds_was_imputed` are used downstream (the join drops imputed `"ALL"` bed rows so they cannot pass as area totals).
-- **Character IDs.** Same rule from listings through to `area_code`, to avoid the KNIME-style type mismatch the listings notebook describes.
-- **Secrets out of git.** The Koordinates key is an environment variable via `.dotenv`.
-- **Checkpointed geocoding.** Partial CSVs are written every 500 unique coordinates so an API drop does not waste a full run.
-- **Narrative notebooks.** Cleaning decisions are written as markdown next to the code (why 0 reviews/month, why `-99` is dropped, why a left join). That is documentation for the course write-up; it is not a substitute for the assertions in section 4.3.
+- **Secrets stay out of git.** The API key is read from `.env`, which is in `.gitignore`.
+- **Checkpointed geocoding.** Progress is saved every 500 coordinates.
+- **Narrative notebooks.** The Rmds explain why each cleaning decision was made (why 0
+  reviews a month, why -99 is dropped, why a left join). The explanations sit next to the
+  code, and the checks in section 4.3 back them up.
 
 ---
 
-## 6. Honest summary of mismatches
+## 6. Mismatches found and fixed (Deliverable 6)
 
-| Claim one might want to make | What is actually true |
-| --- | --- |
-| “The pipeline uses relative paths throughout.” | False. `bond_listing_clean.Rmd` hardcodes `/Users/nalikadesai/Desktop/DATA201` twice. |
-| “Bond cleaning writes the file the join reads.” | Filenames disagree (`Bond Data Quarterly (cleaned).csv` vs `Bond_Data_Quarterly_(cleaned).csv`). |
-| “kNN parameters are named constants at the top of each file.” | False. `k = 10` and `k = 5` are inline. `Pool(processes=20)` is inline. |
-| “Validation fails the knit if a check fails.” | Mostly false. Duplicate keys and join row-counts are printed with “expect 0/TRUE”. |
-| “API failures stop the geocoder.” | False. They become `None` area codes. Missing API **key** does raise. |
-| “We hand-checked one case before scaling.” | True for Redcliffs → `332100` (README). Not implemented as code, and not done for kNN or the join. |
-| “The analysis notebook is a single knit.” | The source currently duplicates the whole document. |
+We compared the first draft of this document with the code and with what we meant the
+code to do. Every mismatch below has been fixed.
 
-The pipeline’s **data** design (character IDs, keep raw price, left join, weekly/nightly unit conversion, `has_bond_data`) is coherent. The **software** design matches the lecture on paths and assertions only in parts; the bond-cleaning notebook is the largest gap.
+| What we wanted | What the code actually did | Fix |
+| --- | --- | --- |
+| Relative paths throughout | `bond_listing_clean.Rmd` used `/Users/nalikadesai/Desktop/DATA201`, twice | Paths are relative to the repo folder |
+| The bond Rmd writes the file the join reads | It wrote `Bond Data Quarterly (cleaned).csv`; the join reads `Bond_Data_Quarterly_(cleaned).csv` | The file names now match |
+| Numbers named at the top | `k = 10`, `k = 5`, `2000`, `30`, `-99`, `7`, `processes=20`, `timeout=15`, `500` sat inside the code | Named in a settings block at the top of each file |
+| Checks stop the run | Checks printed a number with `# expect 0` and carried on | `if (...) stop("...")` |
+| A failed area-code lookup is noticed | It quietly became a blank area code | The script stops with an error, after saving |
+| The Redcliffs check protects the geocoder | It was done once by hand and only written in the README | It runs in code at the start of every run |
+| The analysis notebook is one document | After a merge it held the whole analysis twice and did not knit ("Duplicate chunk label 'setup'") | One copy, keeping the Banks Peninsula caveat and the bedrooms note from the second copy |
+| One bond row per area, quarter, dwelling type and bed count (the Rmd said "No duplicate rows") | kNN gave blank bed counts a value the area already had: 779 duplicate rows, and 44 areas with two "ALL" totals | Blank bed counts are labelled "Not recorded", and a check stops the run on any duplicate |
+| Filled prices look like each listing's real prices | kNN copied one price to all of a host's listings at one address (7 listings from 2 to 4 bedrooms all got $213): 564 copied prices | Each listing's own median price first; kNN only for listings that never show a price. 32 copies are left, all in the kNN rows |
+| "Median Airbnb price" counts each Airbnb once | Medians counted listing-months, so a listing seen in six months counted six times | Each listing's own median first, then the median across listings |
+
+### Known gaps we have not fixed
+
+- **Rent includes rooms.** The bond "ALL" totals include rooms and boarding houses, while
+  question 2 uses whole-home Airbnbs, so the gap is probably a little larger than a
+  whole-home-to-whole-home comparison would give. The bond file does have house-only
+  rents for 110 of the 114 Christchurch areas in April to June 2026, so this can be
+  improved. We kept the all-dwelling total for now so the answer stays comparable with
+  Deliverable 5, and list it as the next improvement.
+- **Folder structure.** The lecture suggests separate `data/`, `src/` and `out/` folders.
+  The repo keeps everything in one folder, so that teammates' file paths do not break
+  in the middle of the project.

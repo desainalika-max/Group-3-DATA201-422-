@@ -63,7 +63,9 @@ All files read and write in the repo folder, so open the repo folder (or knit in
 
 `get_area_codes.py` looks up the area code of every coordinate online and needs an API key in `.env`. It only needs to run again if listing coordinates change, because `join_listings_bonds.Rmd` takes just the `area_code` column from its output.
 
-What changed in Deliverable 6, and why, is in `Deliverable6_changes.md`.
+Each file stops with an error if one of its checks fails, so a knit that finishes has passed all of them.
+
+What changed in Deliverable 6, and why, is in `Deliverable6_changes.md`. How the pipeline is designed is in `design_principles.md`.
 
 ## Cleaning the Airbnb Listings
 
@@ -133,7 +135,7 @@ Data comes from Tenancy Services' bond database, covering private-sector bonds l
 | **TimeFrame** | Quarter start date, based on tenancy start date |
 | **Location Id** | SA2-2019 area code (Statistics NZ) |
 | **Dwelling Type** | House / Apartment / Flat / Room / Boarding House / ALL |
-| **Number Of Beds** | 0–9, "5+", or "ALL" (rollup) |
+| **Number Of Beds** | 0–9, "5+", "ALL" (rollup), or "Not recorded" |
 | **Total Bonds** | Bonds lodged in the group |
 | **Active Bonds** | Still ongoing |
 | **Closed Bonds** | Ended |
@@ -142,28 +144,26 @@ Data comes from Tenancy Services' bond database, covering private-sector bonds l
 | **Upper Quartile Rent**                           | Synthetic 75th percentile, assumes log-normal distribution                           |
 | **Lower Quartile Rent**                           | Synthetic 25th percentile, assumes log-normal distribution                           |
 | **Log Std Dev Weekly Rent** | Spread of the log-rent distribution |
-| **beds_was_imputed** | **Added.** TRUE where `Number Of Beds` was filled by kNN rather than reported |
 
 ### Cleaning decisions
 
 - **Timeframe:** matched dynamically against the cleaned listings file's actual date range, rather than hardcoded, so the filter stays correct if the listings panel is later edited. Three quarters overlap: 2025-10-01 (Oct–Dec 2025), 2026-01-01 (Jan–Mar 2026), 2026-04-01 (Apr–Jun 2026). No 2026-07-01 quarter exists yet, since bond data publishes a couple of months behind.
 - **Columns:** every column is kept. `Total Bonds`, `Active Bonds`, `Closed Bonds` are the stock-side variables the merge needs; `Median Rent` and the other rent statistics are the price-side variables. Nothing was dropped, since next week's comparison needs both sides.
 - **Location Id:** rows with a blank `Location Id`, or `Location Id == -99`, were dropped entirely. Blank rows also had no rent statistics, carrying no usable information. `-99` represents an "All of New Zealand" rollup rather than a real SA2 area, cannot be matched in a location-based merge, and would distort a location-level dataset if kept.
-- **Number Of Beds:** missing values (distinct from the legitimate "ALL" aggregate level, and spread thinly across dwelling types rather than concentrated in one) were imputed via kNN (k = 5), matching each row to its nearest neighbours on dwelling type, location, bond counts, and rent statistics. `beds_was_imputed` flags every filled row. Unlike the listings price column, there was no unimputed copy kept alongside, since after imputation zero missing values remain.
+- **Number Of Beds (changed in Deliverable 6):** a blank bed count is its own group, bonds where the number of bedrooms was not recorded. 856 of the 858 blank rows sit next to their own "ALL" total row and have their own bond counts. They are now labelled `"Not recorded"`. In Deliverable 4 they were filled by kNN, which gave them bed counts the area already had and created 779 duplicate rows.
 
 ### Known limitations
 
-1. `Location Id` is an SA2 area code, not a name or coordinate. No location-name lookup exists in this file, so it can't yet be filtered to Christchurch-only or joined to the listings data by name, a separate SA2-to-district lookup (e.g. from Stats NZ) is needed before next week's merge.
-2. The kNN distance calculation treats `Location Id` as categorical (same area vs. different), not as spatial distance. Different SA2 codes aren't numerically "close" to each other, so cross-location neighbour matching leans more on dwelling type and bond/rent figures than true geographic proximity.
-3. Bond data is quarterly while listings are monthly, so any merge will compare a single quarterly figure against up to three monthly listings figures.
+1. `Location Id` is an SA2 area code, not a name. The listings get their SA2 area codes from `get_area_codes.py`, and the two are joined in `join_listings_bonds.Rmd`.
+2. Bond data is quarterly while listings are monthly, so any merge will compare a single quarterly figure against up to three monthly listings figures.
 
 ### How to use the output
 
-- **Reliable bed counts:** filter `beds_was_imputed == FALSE`
-- **Joining to the Airbnb panel:** requires the SA2-to-Christchurch lookup mentioned above before `Location Id` can be matched to listing coordinates.
+- **Area totals:** keep rows where `Dwelling Type` and `Number Of Beds` are both `"ALL"`. There is exactly one per area and quarter.
+- **Joining to the Airbnb panel:** join on `Location Id` = the listings' `area_code`, and `TimeFrame` = the listing's quarter (see `join_listings_bonds.Rmd`).
 
 
-### Sanity Check Example
+## Sanity Check Example
 
 **Step checked**: Geocoding the Airbnb listings to Stats NZ SA2 area codes via
 the Koordinates Query API.
@@ -182,3 +182,8 @@ across all ~4,000 unique listing coordinates.
 
 **Result**: Confirmed correct, catching a potential coordinate-order error before it could silently corrupt the entire
 geocoded dataset.
+
+**Now in the code (Deliverable 6)**: `get_area_codes.py` repeats this check every time it runs. It looks up the
+Redcliffs point first and stops with an error if the answer is not `332100`, so a later edit to `LAYER_ID` or to
+`x`/`y` cannot slip through. The same idea, one row worked out by hand and compared with the code, is also used in
+`clean_christchurch_panel.Rmd` (one listing's filled price) and `join_listings_bonds.Rmd` (one listing's bond row).
