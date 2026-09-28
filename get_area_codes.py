@@ -1,3 +1,7 @@
+# Reads the cleaned listings, looks up the Stats NZ area code of every coordinate with the
+# Koordinates API, and saves Christchurch_with_area_codes.csv.
+# Needs KOORDINATES_API_KEY in a .env file. Run it from the repo folder.
+
 import os
 import time
 import requests
@@ -12,12 +16,16 @@ LAYER_ID = 123515
 INPUT_FILE = "Christchurch Oct2025 to Jun2026 (cleaned).csv"
 OUTPUT_FILE = "Christchurch_with_area_codes.csv"
 
+N_PROCESSES = 20        # how many API calls run at the same time
+TIMEOUT_SECONDS = 15    # give up on one API call after this long
+CHECKPOINT_EVERY = 500  # save progress after this many coordinates
+
 def get_area_code(coords):
     lat, lng = coords
     url = "https://koordinates.com/services/query/v1/vector.json"
     params = {"key": API_KEY, "layer": LAYER_ID, "x": lng, "y": lat}
     try:
-        r = requests.get(url, params=params, timeout=15)
+        r = requests.get(url, params=params, timeout=TIMEOUT_SECONDS)
         data = r.json()
         features = data["vectorQuery"]["layers"][str(LAYER_ID)]["features"]
         if not features:
@@ -42,11 +50,11 @@ if __name__ == "__main__":
     # crashes later trying to write string values into a numeric column
     df["area_code"] = pd.Series([None] * len(df), dtype="object")
 
-    with Pool(processes=20) as pool:
+    with Pool(processes=N_PROCESSES) as pool:
         for i, code in enumerate(pool.imap(get_area_code, coords)):
             area_codes[i] = code
-            # checkpoint every 500 so a disconnect never loses everything
-            if i % 500 == 0:
+            # save progress now and then, so a disconnect never loses everything
+            if i % CHECKPOINT_EVERY == 0:
                 elapsed = time.time() - start
                 print(f"{i}/{len(coords)} done, {elapsed:.0f}s elapsed")
                 lookup = dict(zip(coords[:i+1], area_codes[:i+1]))
@@ -67,3 +75,8 @@ if __name__ == "__main__":
     missing = df["area_code"].isna().sum()
     print(f"Missing area codes: {missing} out of {len(df)}")
     print(df[["latitude", "longitude", "area_code"]].head())
+
+    # the file is already saved, but a listing without an area code must not pass silently
+    if missing > 0:
+        raise ValueError(f"{missing} listings have no area code. Check the 'Failed for' "
+                         f"messages above and run the script again.")

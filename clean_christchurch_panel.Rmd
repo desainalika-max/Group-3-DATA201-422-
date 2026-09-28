@@ -7,6 +7,9 @@ output:
     toc_depth: 2
 ---
 
+Reads `Christchurch Oct2025 to Jun2026 (combined).csv`, cleans it, and saves
+`Christchurch Oct2025 to Jun2026 (cleaned).csv`.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 # install once if needed: install.packages(c("dplyr", "tidyr", "readr", "VIM"))
@@ -18,7 +21,7 @@ library(VIM)
 
 # 1. Read the data
 
-```{r paths}
+```{r settings}
 # "." means the folder this Rmd is in (the repo folder), so it works on every computer.
 # Knitting, and running chunks in RStudio, both use that folder automatically.
 # Running chunks in VS Code: open the repo folder first (File > Open Folder).
@@ -27,7 +30,13 @@ data_dir <- "."
 in_file  <- file.path(data_dir, "Christchurch Oct2025 to Jun2026 (combined).csv")
 out_file <- file.path(data_dir, "Christchurch Oct2025 to Jun2026 (cleaned).csv")
 
-file.exists(in_file)
+# cleaning rules
+price_max        <- 2000   # a nightly price above this is an error
+knn_k            <- 10     # how many similar listings kNN uses to fill a price
+long_stay_nights <- 30     # a minimum stay this long makes a listing long-stay
+random_seed      <- 2026   # makes kNN give the same result every time
+
+if (!file.exists(in_file)) stop("Cannot find the input file: ", in_file)
 ```
 
 ```{r read}
@@ -189,23 +198,25 @@ same-month listings are preferred as neighbours. Because December to February co
 prices at all, values for those months are drawn from listings in other months.
 
 ```{r price-knn}
-set.seed(2026)
+set.seed(random_seed)
 
+# prices above price_max are errors, so they are filled like missing prices
 airbnb <- airbnb %>%
-  mutate(price_imputed = ifelse(price > 2000, NA, price))   # 27 impossible values
+  mutate(price_imputed = ifelse(price > price_max, NA, price))
 
 airbnb <- kNN(airbnb,
               variable = "price_imputed",
               dist_var = c("room_type", "latitude", "longitude",
                            "minimum_nights_filled",
                            "calculated_host_listings_count", "month_year"),
-              k = 10, imp_var = FALSE)
+              k = knn_k, imp_var = FALSE)
 
 airbnb <- airbnb %>%
-  mutate(price_was_imputed = is.na(price) | price > 2000)
+  mutate(price_was_imputed = is.na(price) | price > price_max)
 
 sum(airbnb$price_was_imputed)
-sum(is.na(airbnb$price_imputed))
+
+if (anyNA(airbnb$price_imputed)) stop("Some prices are still missing after kNN")
 ```
 
 The original `price` column is kept unchanged, `price_imputed` holds the filled version,
@@ -227,8 +238,8 @@ airbnb <- airbnb %>%
   group_by(id) %>%
   mutate(months_present = n_distinct(month_year)) %>%
   ungroup() %>%
-  mutate(in_all_9_months = months_present == 9,
-         long_stay = minimum_nights_filled >= 30,
+  mutate(in_all_9_months = months_present == length(month_levels),
+         long_stay = minimum_nights_filled >= long_stay_nights,
          name = trimws(name))
 
 table(airbnb$months_present)
@@ -244,7 +255,9 @@ to nightly rental and are worth excluding from tourist-price analysis.
 # 10. Validation
 
 ```{r checks}
-sum(duplicated(airbnb[, c("id", "month_year")]))   # expect 0
+if (anyDuplicated(airbnb[, c("id", "month_year")]) > 0) {
+  stop("A listing appears twice in the same month")
+}
 range(airbnb$latitude)
 range(airbnb$longitude)
 colSums(is.na(airbnb))

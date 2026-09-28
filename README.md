@@ -107,7 +107,7 @@ The original `price` column is kept unchanged. `price_imputed` holds the filled 
 **Source:** [Tenancy Services | Rental bond data](https://www.tenancy.govt.nz/about-tenancy-services/data-and-statistics/rental-bond-data/), Detailed quarterly report, Jan 2020 – Apr 2026
 **License:** Creative Commons Attribution 3.0 NZ, credited to the Ministry of Business, Innovation and Employment
 **Cleaning script:** `bond_listing_clean.Rmd`
-**Output:** `Bond Data Quarterly (cleaned).csv`
+**Output:** `Bond_Data_Quarterly_(cleaned).csv`
 
 Data comes from Tenancy Services' bond database, covering private-sector bonds lodged each month, listed by tenancy start date, using SA2-2019 area definitions from Statistics NZ. Fixed random rounding to base 3 and suppression of results under 5 bonds is applied by MBIE before release. Recent quarters are provisional due to an ongoing bond-system migration and may not be directly comparable with earlier periods.
 
@@ -146,3 +146,62 @@ Data comes from Tenancy Services' bond database, covering private-sector bonds l
 
 - **Reliable bed counts:** filter `beds_was_imputed == FALSE`
 - **Joining to the Airbnb panel:** requires the SA2-to-Christchurch lookup mentioned above before `Location Id` can be matched to listing coordinates.
+
+
+## Deliverable 6
+
+Tasks 1 to 3 are below. Tasks 4 and 5 (the design principles document) are done by Nalika.
+
+### What we changed and why (tasks 1 and 2)
+
+We went back through our code using the Week 9 lecture slides on best coding practices. None of these changes affect our answers. They are still $238, $255 and 8 Airbnbs per 100 rentals, the same as Deliverable 5.
+
+#### 1. Relative file paths
+
+Lecture: "Always use relative file paths".
+
+- `bond_listing_clean.Rmd` used a folder on Nalika's laptop (`/Users/nalikadesai/Desktop/DATA201`), so it only worked on her computer. It now uses the repo folder, so it works for everyone.
+- It also saved its output under a different name from the one the join reads. The names now match.
+
+#### 2. Settings at the top of each file
+
+Lecture: "Draw attention to parameters" and "no magic numbers".
+
+- Numbers that control the code used to be hidden in the middle of it, like 2000, 10 and 30. They now have names at the top of each file, for example `price_max <- 2000` and `knn_k <- 10`. The name says what the number means, and there is only one place to change it.
+- Other examples are `min_listings <- 20` and `days_per_week <- 7` in the analysis, and `N_PROCESSES = 20` in `get_area_codes.py`.
+
+#### 3. File headers
+
+Lecture: "File headers".
+
+- Each file now starts with a line or two saying which file it reads and which file it saves.
+
+#### 4. Checks that stop the code
+
+Lecture: "Assertions as documentation".
+
+- Some checks printed a number with a comment like `# expect 0`, and the code carried on even when the number was wrong. They now use `if (...) stop("...")`, so the code stops with a message when something is wrong. For example, the join now stops if it changes the number of rows.
+- `get_area_codes.py` now stops with an error if a listing did not get an area code, instead of leaving it blank without saying anything.
+
+#### 5. Say what type each column is
+
+Lecture: "If you have detailed expectations, record them in the code".
+
+- The bond file now reads `Location Id` as text, because it is an area code, not a number. Read as a number, area 200000 was saved as `2e+05`.
+
+#### Things we noticed but did not change
+
+- The bond file says it has no duplicate rows, but its own check prints 779. They come from the kNN step that fills missing bed counts. Fixing this would change the data, so we left it for now. It does not affect our answers, because the join only uses area totals that kNN did not fill.
+- The saved bond CSV was made by an older version of `bond_listing_clean.Rmd`, so it is not exactly what the code makes now. We did not re-run it, so the data stays the same as Deliverable 5.
+- Separate folders for data, code and outputs. The lecture suggests this, but moving files now would break everyone's file paths.
+- File names with spaces, like `Christchurch Oct2025 to Jun2026 (cleaned).csv`, for the same reason.
+
+### Sanity check example (task 3)
+
+Lecture: "Calculate the expected result by hand, for one or more rows. Compare with the computer output".
+
+- Step checked: the join, which gives each Airbnb listing the bond numbers for its area and quarter.
+- Why it needs checking: if the area code or the quarter is matched wrongly, a listing gets another area's rent. Nothing crashes, the numbers are just wrong.
+- How we checked it: we took one Christchurch Central (326600) listing in April 2026. April is in the quarter that starts on 2026-04-01, so the listing should get the 326600 total for that quarter. We looked that row up ourselves in the raw bond report (`Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv`), not in our cleaned file, and compared the two.
+- Result: both show 42 active bonds and a weekly rent of $537, so the join matched the right area and the right quarter.
+- This check is now in section 5 of `join_listings_bonds.Rmd`. If the numbers ever stop matching, the knit stops with an error.

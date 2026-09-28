@@ -5,6 +5,9 @@ date: "2026-09-13"
 output: html_document
 ---
 
+Reads `Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv`, cleans it, and saves
+`Bond_Data_Quarterly_(cleaned).csv`.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
@@ -16,9 +19,10 @@ library(lubridate)
 
 # 1. Read the Data
 
-```{r paths}
+```{r settings}
 
-data_dir <- "/Users/nalikadesai/Desktop/DATA201"
+# "." means the folder this Rmd is in (the repo folder), so it works on every computer
+data_dir <- "."
 
 in_file <- file.path(data_dir, 
                      "Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv")
@@ -27,17 +31,23 @@ listings_file <- file.path(data_dir,
                            "Christchurch Oct2025 to Jun2026 (cleaned).csv") 
 #Reads the listings file only to get its date range for filtering months from quarterly
 
-out_file <- file.path(data_dir, "Bond Data Quarterly (cleaned).csv")
+# the same file name that join_listings_bonds.Rmd reads
+out_file <- file.path(data_dir, "Bond_Data_Quarterly_(cleaned).csv")
 
-file.exists(in_file)
-file.exists(listings_file)
+national_total_id <- "-99"   # the Location Id used for the all-of-New-Zealand total
+knn_k             <- 5       # how many similar rows kNN uses to fill a bed count
+random_seed       <- 2026    # makes kNN give the same result every time
+
+if (!file.exists(in_file)) stop("Cannot find the input file: ", in_file)
+if (!file.exists(listings_file)) stop("Cannot find the input file: ", listings_file)
 ```
 
 ```{r read}
+# Location Id is an area code (a label, not a number), so it is read as text
 bonds <- read_csv(
-  "/Users/nalikadesai/Desktop/DATA201/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv",
+  in_file,
   na = c("", "NA", "NULL"),
-  show_col_types = FALSE
+  col_types = cols(`Location Id` = col_character(), .default = col_guess())
 )
 dim(bonds)
 ```
@@ -94,7 +104,7 @@ the merge specifically needs.
 
 ```{r location_diagnosis}
 sum(is.na(bonds$`Location Id`)) 
-sum(bonds$`Location Id` == -99, na.rm = TRUE)
+sum(bonds$`Location Id` == national_total_id, na.rm = TRUE)
 ```
 
 Missing Location Id. These rows are also blank on every rent
@@ -102,7 +112,7 @@ statistic, so they carry no usable information beyond the row existing at
 all, and there is no defensible value to impute a location with.
 
 ```{r location_drop}
-bonds <- bonds %>% filter(!is.na(`Location Id`), `Location Id` != -99)
+bonds <- bonds %>% filter(!is.na(`Location Id`), `Location Id` != national_total_id)
 dim(bonds)
 ```
 
@@ -155,7 +165,7 @@ house with similar rent and bond activity in the same area is a reasonable
 proxy for bedroom count.
 
 ```{r beds-knn}
-set.seed(2026)
+set.seed(random_seed)
 
 bonds <- kNN(
   bonds,
@@ -163,7 +173,7 @@ bonds <- kNN(
   dist_var = c("Dwelling Type", "Location Id", "Total Bonds", "Active Bonds",
                "Closed Bonds", "Median Rent", "Geometric Mean Rent",
                "Upper Quartile Rent", "Lower Quartile Rent"),
-  k = 5,
+  k = knn_k,
   imp_var = TRUE
 )
 
