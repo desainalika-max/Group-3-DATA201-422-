@@ -375,8 +375,8 @@ nights</a></li>
 like</a></li>
 <li><a href="#the-scattered-gaps-are-not-missing-at-random" id="toc-the-scattered-gaps-are-not-missing-at-random">8.2 The scattered
 gaps are not missing at random</a></li>
-<li><a href="#our-approach-updated-in-deliverable-6" id="toc-our-approach-updated-in-deliverable-6">8.3 Our approach (updated
-in Deliverable 6)</a></li>
+<li><a href="#our-approach" id="toc-our-approach">8.3 Our
+approach</a></li>
 </ul></li>
 <li><a href="#panel-structure-and-remaining-flags" id="toc-panel-structure-and-remaining-flags">9. Panel structure and
 remaining flags</a></li>
@@ -387,24 +387,26 @@ limitations</a></li>
 </ul>
 </div>
 
-<p>Cleans the combined Airbnb panel,
-<code>Christchurch Oct2025 to Jun2026 (combined).csv</code>, and writes
+<p>Reads <code>Christchurch Oct2025 to Jun2026 (combined).csv</code>,
+cleans it, and saves
 <code>Christchurch Oct2025 to Jun2026 (cleaned).csv</code>.</p>
 <div id="read-the-data" class="section level1">
 <h1>1. Read the data</h1>
-<pre class="r"><code># file paths are relative: &quot;.&quot; is the repo folder, so this works on every computer
-# (in VS Code, open the repo folder first: File &gt; Open Folder)
+<pre class="r"><code># &quot;.&quot; means the folder this Rmd is in (the repo folder), so it works on every computer.
+# Knitting, and running chunks in RStudio, both use that folder automatically.
+# Running chunks in VS Code: open the repo folder first (File &gt; Open Folder).
 data_dir &lt;- &quot;.&quot;
+
 in_file  &lt;- file.path(data_dir, &quot;Christchurch Oct2025 to Jun2026 (combined).csv&quot;)
 out_file &lt;- file.path(data_dir, &quot;Christchurch Oct2025 to Jun2026 (cleaned).csv&quot;)
 
-# cleaning rules, set once here instead of as numbers inside the code
+# cleaning rules
 price_max        &lt;- 2000   # a nightly price above this is an error
 knn_k            &lt;- 10     # how many similar listings kNN uses to fill a price
 long_stay_nights &lt;- 30     # a minimum stay this long makes a listing long-stay
-random_seed      &lt;- 2026   # makes kNN give the same result every run
+random_seed      &lt;- 2026   # makes kNN give the same result every time
 
-if (!file.exists(in_file)) stop(&quot;Input file not found: &quot;, in_file)</code></pre>
+if (!file.exists(in_file)) stop(&quot;Cannot find the input file: &quot;, in_file)</code></pre>
 <pre class="r"><code>airbnb &lt;- read_csv(
   in_file,
   col_types = cols(id = col_character(), host_id = col_character(), .default = col_guess())
@@ -561,124 +563,38 @@ missing a price, 62% do. Inside Airbnb derives price from the booking
 calendar, so a listing with no available nights has no price to
 report.</p>
 </div>
-<div id="our-approach-updated-in-deliverable-6" class="section level2">
-<h2>8.3 Our approach (updated in Deliverable 6)</h2>
-<p>In Deliverable 4 we filled every missing price with kNN, using the
-most similar listings on room type, location, minimum nights, how many
-listings the host runs, and month.</p>
-<p><strong>What went wrong.</strong> kNN cannot tell apart listings that
-have the same host and the same address, because they match on every one
-of those columns. Host 482671075 runs 7 listings at one address in
-Christchurch Central, from 2-bedroom flats to 4-bedroom townhouses. kNN
-gave all 7 the same price, $213 in December and January and $315 in
-February. The 4-bedroom townhouse charges $450 to $741 in the months
-with real prices. In total, 564 filled prices were one value copied
-across a host’s listings like this.</p>
-<p><strong>The fix: fill from the listing itself first.</strong> Most
-missing prices are in December to February, and the same listing has
-real prices in the other months. The listing’s own median price is a
-better guess than the price of a neighbour. So a missing price is now
-filled in this order:</p>
-<ol style="list-style-type: decimal">
-<li>the real price, if there is one</li>
-<li>the listing’s own median price from the months it does have (10,176
-rows)</li>
-<li>kNN, with the same settings as before, only for listings with no
-real price in any month (518 rows)</li>
-</ol>
+<div id="our-approach" class="section level2">
+<h2>8.3 Our approach</h2>
+<p>We discussed this as a group and decided to use kNN imputation for
+the missing prices. It is one method among several, and we may test
+other approaches later to compare the results.</p>
+<p>kNN fills each missing price using the most similar listings, judged
+on room type, location, minimum nights and how many listings the host
+runs. Month is included so same-month listings are preferred as
+neighbours. Because December to February contain no prices at all,
+values for those months are drawn from listings in other months.</p>
 <pre class="r"><code>set.seed(random_seed)
 
-# prices over price_max are errors, so treat them as missing
-sum(airbnb$price &gt; price_max, na.rm = TRUE)</code></pre>
-<pre><code>## [1] 27</code></pre>
-<pre class="r"><code>airbnb &lt;- airbnb %&gt;%
-  mutate(price_real = ifelse(price &gt; price_max, NA, price))
-
-# kNN guess for every missing price, same settings as Deliverable 4
+# prices above price_max are errors, so they are filled like missing prices
 airbnb &lt;- airbnb %&gt;%
-  mutate(price_knn = price_real)
+  mutate(price_imputed = ifelse(price &gt; price_max, NA, price))
 
 airbnb &lt;- kNN(airbnb,
-              variable = &quot;price_knn&quot;,
+              variable = &quot;price_imputed&quot;,
               dist_var = c(&quot;room_type&quot;, &quot;latitude&quot;, &quot;longitude&quot;,
                            &quot;minimum_nights_filled&quot;,
                            &quot;calculated_host_listings_count&quot;, &quot;month_year&quot;),
               k = knn_k, imp_var = FALSE)
 
-# each listing&#39;s own median price over the months it has a real price
-# (NA if the listing never has a real price)
 airbnb &lt;- airbnb %&gt;%
-  group_by(id) %&gt;%
-  mutate(own_median_price = median(price_real, na.rm = TRUE)) %&gt;%
-  ungroup()
+  mutate(price_was_imputed = is.na(price) | price &gt; price_max)
 
-# record where each price comes from, then pick the value in that order
-airbnb &lt;- airbnb %&gt;%
-  mutate(price_source = case_when(
-    !is.na(price_real)       ~ &quot;observed&quot;,
-    !is.na(own_median_price) ~ &quot;own median&quot;,
-    TRUE                     ~ &quot;kNN&quot;
-  )) %&gt;%
-  mutate(price_imputed = case_when(
-    price_source == &quot;observed&quot;   ~ price_real,
-    price_source == &quot;own median&quot; ~ own_median_price,
-    price_source == &quot;kNN&quot;        ~ price_knn
-  )) %&gt;%
-  mutate(price_was_imputed = price_source != &quot;observed&quot;)
-
-table(airbnb$price_source)</code></pre>
-<pre><code>## 
-##        kNN   observed own median 
-##        518      18101      10176</code></pre>
-<pre class="r"><code>if (anyNA(airbnb$price_imputed)) stop(&quot;Some rows still have no price&quot;)</code></pre>
+sum(airbnb$price_was_imputed)</code></pre>
+<pre><code>## [1] 10694</code></pre>
+<pre class="r"><code>if (anyNA(airbnb$price_imputed)) stop(&quot;Some prices are still missing after kNN&quot;)</code></pre>
 <p>The original <code>price</code> column is kept unchanged,
-<code>price_imputed</code> holds the filled version,
-<code>price_was_imputed</code> marks which rows differ, and the new
-<code>price_source</code> column says how each price was filled.</p>
-<pre class="r"><code># the 7 listings at the shared address now keep their own prices in December
-airbnb %&gt;%
-  filter(host_id == &quot;482671075&quot;, month_year == &quot;December 2025&quot;,
-         latitude == -43.535568, longitude == 172.6318853) %&gt;%
-  select(name, price_knn, price_imputed, price_source)</code></pre>
-<pre><code>## # A tibble: 7 × 4
-##   name                                      price_knn price_imputed price_source
-##   &lt;chr&gt;                                         &lt;dbl&gt;         &lt;dbl&gt; &lt;chr&gt;       
-## 1 CBD Gem Walk to everything 3 bedroom 2 b…       213          304  own median  
-## 2 Heart of Christchurch CBD Hideaway 2bed …       213          210. own median  
-## 3 In the heart of it all: 2 bed CBD townho…       213          210. own median  
-## 4 Walk to Riverside Market: 4 bed 4 bath w…       213          552  own median  
-## 5 Tuam Street delight, 4 bed 4 bath with C…       213          426. own median  
-## 6 Tuam Street Treasure- 2 Bed 2 Bath              213          214  own median  
-## 7 Central Charm 2 bed 2 bath with sunny Ba…       213          206. own median</code></pre>
-<p><strong>Sanity check one row by hand.</strong> Take the 4-bedroom
-townhouse from the example above. Its real prices are $614, $615, $741,
-$490, $450 and $450. In order they are 450, 450, 490, 614, 615, 741, so
-its median is (490 + 614) / 2 = <strong>$552</strong>. Its filled
-December price should be exactly that.</p>
-<pre class="r"><code>townhouse_december &lt;- airbnb %&gt;%
-  filter(id == &quot;967760129147377073&quot;, month_year == &quot;December 2025&quot;)
-
-townhouse_december$price_imputed</code></pre>
-<pre><code>## [1] 552</code></pre>
-<pre class="r"><code>if (townhouse_december$price_imputed != 552) {
-  stop(&quot;The townhouse&#39;s filled December price is not its own median of $552&quot;)
-}</code></pre>
-<pre class="r"><code># filled prices that are one value copied across a host&#39;s listings at the same
-# address and month: first with kNN alone, then with the new method
-copies &lt;- airbnb %&gt;%
-  filter(price_was_imputed) %&gt;%
-  group_by(host_id, latitude, longitude, month_year) %&gt;%
-  mutate(listings = n(),
-         knn_prices = n_distinct(price_knn),
-         new_prices = n_distinct(price_imputed)) %&gt;%
-  ungroup()
-
-sum(copies$listings &gt; 1 &amp; copies$knn_prices == 1)   # kNN alone</code></pre>
-<pre><code>## [1] 564</code></pre>
-<pre class="r"><code>sum(copies$listings &gt; 1 &amp; copies$new_prices == 1)   # now</code></pre>
-<pre><code>## [1] 32</code></pre>
-<pre class="r"><code># the helper columns are not needed in the saved file
-airbnb &lt;- airbnb %&gt;% select(-price_real, -price_knn, -own_median_price)</code></pre>
+<code>price_imputed</code> holds the filled version, and
+<code>price_was_imputed</code> marks which rows differ.</p>
 <pre class="r"><code>airbnb %&gt;%
   group_by(month_year) %&gt;%
   summarise(rows = n(),
@@ -689,14 +605,14 @@ airbnb &lt;- airbnb %&gt;% select(-price_real, -price_knn, -own_median_price)</c
 ##   month_year     rows observed imputed median_price
 ##   &lt;ord&gt;         &lt;int&gt;    &lt;int&gt;   &lt;int&gt;        &lt;dbl&gt;
 ## 1 October 2025   2991     2821     177          153
-## 2 November 2025  3047     2835     219          166
-## 3 December 2025  3180        0    3180          209
-## 4 January 2026   3057        0    3057          212
-## 5 February 2026  3190        0    3190          214
-## 6 March 2026     3227     3059     172          237
+## 2 November 2025  3047     2835     219          164
+## 3 December 2025  3180        0    3180          167
+## 4 January 2026   3057        0    3057          203
+## 5 February 2026  3190        0    3190          244
+## 6 March 2026     3227     3059     172          238
 ## 7 April 2026     3273     3069     207          229
-## 8 May 2026       3361     3149     216          213
-## 9 June 2026      3469     3195     276          212</code></pre>
+## 8 May 2026       3361     3149     216          215
+## 9 June 2026      3469     3195     276          214</code></pre>
 </div>
 </div>
 <div id="panel-structure-and-remaining-flags" class="section level1">
@@ -752,14 +668,12 @@ range(airbnb$latitude)</code></pre>
 ##                              0                              0 
 ##                     month_date          minimum_nights_filled 
 ##                              0                              0 
-##      minimum_nights_was_filled                   price_source 
+##      minimum_nights_was_filled                  price_imputed 
 ##                              0                              0 
-##                  price_imputed              price_was_imputed 
+##              price_was_imputed                 months_present 
 ##                              0                              0 
-##                 months_present                in_all_9_months 
-##                              0                              0 
-##                      long_stay 
-##                              0</code></pre>
+##                in_all_9_months                      long_stay 
+##                              0                              0</code></pre>
 <p>Coordinates fall between -43.87 and -43.42 latitude and 172.43 to
 173.10 longitude, which is Christchurch City including Banks Peninsula.
 No stray points.</p>
@@ -768,12 +682,9 @@ No stray points.</p>
 <h1>11. Known limitations</h1>
 <ol style="list-style-type: decimal">
 <li>December 2025 to February 2026 contain no observed prices, so those
-values are the least reliable in the dataset. December to February is
-the summer peak, and a listing’s own median comes from the other months,
-so filled summer prices are probably a little too low.</li>
-<li>The 518 rows filled by kNN belong to listings that never show a real
-price, so they still rely on neighbours and can still share one value
-across a host’s listings.</li>
+values are the least reliable in the dataset.</li>
+<li>kNN was chosen as a first approach. Other imputation methods have
+not been tested yet and may give different results.</li>
 <li>Imputation uncertainty is not carried through, so standard errors
 computed on <code>price_imputed</code> will be slightly too small.</li>
 </ol>
