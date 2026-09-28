@@ -356,17 +356,24 @@ area code and quarter</h3>
 </div>
 
 
+<p>Reads <code>Christchurch_with_area_codes.csv</code> and
+<code>Bond_Data_Quarterly_(cleaned).csv</code>, joins them on area code
+and quarter, and saves <code>Christchurch_with_bonds.csv</code>.</p>
 <div id="read-the-two-files" class="section level1">
 <h1>1. Read the two files</h1>
+<pre class="r"><code>listings_file  &lt;- &quot;Christchurch_with_area_codes.csv&quot;
+bonds_file     &lt;- &quot;Bond_Data_Quarterly_(cleaned).csv&quot;
+raw_bonds_file &lt;- &quot;Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv&quot;   # only used for the sanity check
+out_file       &lt;- &quot;Christchurch_with_bonds.csv&quot;</code></pre>
 <pre class="r"><code># area codes are labels, so both sides are read as text and match exactly
 # the bond file writes missing values as the word NULL
-listings &lt;- read_csv(&quot;Christchurch_with_area_codes.csv&quot;,
+listings &lt;- read_csv(listings_file,
                      col_types = cols(id = col_character(),
                                       host_id = col_character(),
                                       area_code = col_character(),
                                       .default = col_guess()))
 
-bonds &lt;- read_csv(&quot;Bond_Data_Quarterly_(cleaned).csv&quot;,
+bonds &lt;- read_csv(bonds_file,
                   na = c(&quot;&quot;, &quot;NA&quot;, &quot;NULL&quot;),
                   col_types = cols(`Location Id` = col_character(),
                                    .default = col_guess()))
@@ -388,8 +395,7 @@ holds.</p>
     month_year %in% c(&quot;April 2026&quot;, &quot;May 2026&quot;, &quot;June 2026&quot;)            ~ as.Date(&quot;2026-04-01&quot;)
   ))
 
-sum(is.na(listings$quarter))   # expect 0</code></pre>
-<pre><code>## [1] 0</code></pre>
+if (anyNA(listings$quarter)) stop(&quot;Some months were not given a quarter&quot;)</code></pre>
 </div>
 <div id="keep-one-bond-row-per-area-and-quarter" class="section level1">
 <h1>3. Keep one bond row per area and quarter</h1>
@@ -416,8 +422,9 @@ rows are dropped too.</p>
 
 nrow(bond_totals)</code></pre>
 <pre><code>## [1] 4868</code></pre>
-<pre class="r"><code>sum(duplicated(bond_totals[, c(&quot;area_code&quot;, &quot;quarter&quot;)]))   # expect 0</code></pre>
-<pre><code>## [1] 0</code></pre>
+<pre class="r"><code>if (anyDuplicated(bond_totals[, c(&quot;area_code&quot;, &quot;quarter&quot;)]) &gt; 0) {
+  stop(&quot;An area has two bond totals in the same quarter, so the join would add rows&quot;)
+}</code></pre>
 </div>
 <div id="join" class="section level1">
 <h1>4. Join</h1>
@@ -428,16 +435,50 @@ from all of New Zealand.</p>
   left_join(bond_totals, by = c(&quot;area_code&quot;, &quot;quarter&quot;)) %&gt;%
   mutate(has_bond_data = !is.na(bond_total))
 
-nrow(joined) == nrow(listings)   # expect TRUE, the join adds no rows</code></pre>
-<pre><code>## [1] TRUE</code></pre>
-<pre class="r"><code>table(joined$has_bond_data)</code></pre>
+if (nrow(joined) != nrow(listings)) stop(&quot;The join changed the number of rows&quot;)
+
+table(joined$has_bond_data)</code></pre>
 <pre><code>## 
 ## FALSE  TRUE 
 ##  6849 21946</code></pre>
 </div>
+<div id="sanity-check-one-row-by-hand" class="section level1">
+<h1>5. Sanity check one row by hand</h1>
+<p>We pick one Christchurch Central (326600) listing in April 2026.
+April is in the quarter that starts on 2026-04-01, so the join should
+give it the area total for 326600 in that quarter. We look that row up
+ourselves in the raw bond report, not in our cleaned file, and check the
+two agree.</p>
+<pre class="r"><code>one_listing &lt;- joined %&gt;%
+  filter(area_code == &quot;326600&quot;, month_year == &quot;April 2026&quot;) %&gt;%
+  head(1)
+
+one_listing %&gt;% select(id, month_year, quarter, bond_active, median_rent_weekly)</code></pre>
+<pre><code>## # A tibble: 1 × 5
+##   id                  month_year quarter    bond_active median_rent_weekly
+##   &lt;chr&gt;               &lt;chr&gt;      &lt;date&gt;           &lt;dbl&gt;              &lt;dbl&gt;
+## 1 1006152691713709590 April 2026 2026-04-01          42                537</code></pre>
+<pre class="r"><code>raw_bonds &lt;- read_csv(raw_bonds_file, col_types = cols(.default = col_character()))
+
+raw_row &lt;- raw_bonds %&gt;%
+  filter(`Location Id` == &quot;326600&quot;, TimeFrame == &quot;2026-04-01&quot;,
+         `Dwelling Type` == &quot;ALL&quot;, `Number Of Beds` == &quot;ALL&quot;)
+
+raw_row %&gt;% select(TimeFrame, `Location Id`, `Active Bonds`, `Median Rent`)</code></pre>
+<pre><code>## # A tibble: 1 × 4
+##   TimeFrame  `Location Id` `Active Bonds` `Median Rent`
+##   &lt;chr&gt;      &lt;chr&gt;         &lt;chr&gt;          &lt;chr&gt;        
+## 1 2026-04-01 326600        42             537</code></pre>
+<pre class="r"><code>if (one_listing$bond_active != as.numeric(raw_row$`Active Bonds`) ||
+    one_listing$median_rent_weekly != as.numeric(raw_row$`Median Rent`)) {
+  stop(&quot;The joined bond numbers do not match the raw bond report&quot;)
+}</code></pre>
+<p>Both show 42 active bonds and a weekly rent of $537, so the join
+matched the right area and the right quarter.</p>
+</div>
 <div id="save" class="section level1">
-<h1>5. Save</h1>
-<pre class="r"><code>write_csv(joined, &quot;Christchurch_with_bonds.csv&quot;)
+<h1>6. Save</h1>
+<pre class="r"><code>write_csv(joined, out_file)
 
 dim(joined)</code></pre>
 <pre><code>## [1] 28795    37</code></pre>

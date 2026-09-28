@@ -356,15 +356,26 @@ Christchurch</h1>
 </div>
 
 
+<p>Reads <code>Christchurch_with_bonds.csv</code> and answers the three
+Deliverable 5 questions. Knit <code>join_listings_bonds.Rmd</code>
+first, because it makes that file.</p>
+<pre class="r"><code>central_area   &lt;- &quot;326600&quot;                # SA2 area code of Christchurch Central
+min_listings   &lt;- 20                      # an area needs this many listings to be ranked
+latest_quarter &lt;- as.Date(&quot;2026-04-01&quot;)   # April to June 2026
+days_per_week  &lt;- 7                       # rents are weekly, Airbnb prices are per night</code></pre>
 <pre class="r"><code># made by join_listings_bonds.Rmd, so knit that first
 joined &lt;- read_csv(&quot;Christchurch_with_bonds.csv&quot;,
                    col_types = cols(id = col_character(),
                                     host_id = col_character(),
                                     area_code = col_character(),
-                                    .default = col_guess()))</code></pre>
+                                    .default = col_guess()))
+
+if (anyDuplicated(joined[, c(&quot;id&quot;, &quot;month_year&quot;)]) &gt; 0) {
+  stop(&quot;A listing appears twice in the same month&quot;)
+}</code></pre>
 <div id="median-airbnb-price-in-christchurch-central-326600" class="section level1">
 <h1>1. Median Airbnb price in Christchurch Central (326600)</h1>
-<pre class="r"><code>central &lt;- joined %&gt;% filter(area_code == &quot;326600&quot;)
+<pre class="r"><code>central &lt;- joined %&gt;% filter(area_code == central_area)
 
 nrow(central)             # listing-months</code></pre>
 <pre><code>## [1] 1108</code></pre>
@@ -431,7 +442,7 @@ gaps &lt;- joined %&gt;%
          price_was_imputed == FALSE,
          long_stay == FALSE,
          has_bond_data == TRUE) %&gt;%
-  mutate(long_term_per_night = median_rent_weekly / 7,
+  mutate(long_term_per_night = median_rent_weekly / days_per_week,
          gap = price - long_term_per_night)
 
 nrow(gaps)</code></pre>
@@ -477,7 +488,7 @@ gaps %&gt;%
             airbnb_price = median(price),
             long_term_per_night = round(median(long_term_per_night)),
             median_gap = median(gap)) %&gt;%
-  filter(listings &gt;= 20) %&gt;%
+  filter(listings &gt;= min_listings) %&gt;%
   arrange(desc(median_gap)) %&gt;%
   head(5)</code></pre>
 <pre><code>## # A tibble: 5 × 6
@@ -526,7 +537,7 @@ area needs 20+ listings to be ranked.</li>
 <h1>3. Number of Airbnbs vs rental properties</h1>
 <pre class="r"><code># latest quarter (Apr-Jun 2026): Airbnb listings vs active bonds in each area
 counts &lt;- joined %&gt;%
-  filter(quarter == as.Date(&quot;2026-04-01&quot;), has_bond_data == TRUE) %&gt;%
+  filter(quarter == latest_quarter, has_bond_data == TRUE) %&gt;%
   group_by(area_code) %&gt;%
   summarise(ward = first(neighbourhood),
             airbnbs = n_distinct(id),

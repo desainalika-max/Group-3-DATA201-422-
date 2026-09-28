@@ -4,10 +4,20 @@ subtitle: "Deliverable 5 questions, October 2025 - June 2026"
 output: html_document
 ---
 
+Reads `Christchurch_with_bonds.csv` and answers the three Deliverable 5 questions.
+Knit `join_listings_bonds.Rmd` first, because it makes that file.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library(dplyr)
 library(readr)
+```
+
+```{r settings}
+central_area   <- "326600"                # SA2 area code of Christchurch Central
+min_listings   <- 20                      # an area needs this many listings to be ranked
+latest_quarter <- as.Date("2026-04-01")   # April to June 2026
+days_per_week  <- 7                       # rents are weekly, Airbnb prices are per night
 ```
 
 ```{r}
@@ -17,12 +27,16 @@ joined <- read_csv("Christchurch_with_bonds.csv",
                                     host_id = col_character(),
                                     area_code = col_character(),
                                     .default = col_guess()))
+
+if (anyDuplicated(joined[, c("id", "month_year")]) > 0) {
+  stop("A listing appears twice in the same month")
+}
 ```
 
 # 1. Median Airbnb price in Christchurch Central (326600)
 
 ```{r}
-central <- joined %>% filter(area_code == "326600")
+central <- joined %>% filter(area_code == central_area)
 
 nrow(central)             # listing-months
 n_distinct(central$id)    # listings
@@ -72,7 +86,7 @@ gaps <- joined %>%
          price_was_imputed == FALSE,
          long_stay == FALSE,
          has_bond_data == TRUE) %>%
-  mutate(long_term_per_night = median_rent_weekly / 7,
+  mutate(long_term_per_night = median_rent_weekly / days_per_week,
          gap = price - long_term_per_night)
 
 nrow(gaps)
@@ -103,7 +117,7 @@ gaps %>%
             airbnb_price = median(price),
             long_term_per_night = round(median(long_term_per_night)),
             median_gap = median(gap)) %>%
-  filter(listings >= 20) %>%
+  filter(listings >= min_listings) %>%
   arrange(desc(median_gap)) %>%
   head(5)
 
@@ -128,7 +142,7 @@ gaps %>%
 ```{r}
 # latest quarter (Apr-Jun 2026): Airbnb listings vs active bonds in each area
 counts <- joined %>%
-  filter(quarter == as.Date("2026-04-01"), has_bond_data == TRUE) %>%
+  filter(quarter == latest_quarter, has_bond_data == TRUE) %>%
   group_by(area_code) %>%
   summarise(ward = first(neighbourhood),
             airbnbs = n_distinct(id),

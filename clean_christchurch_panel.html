@@ -381,28 +381,32 @@ approach</a></li>
 <li><a href="#panel-structure-and-remaining-flags" id="toc-panel-structure-and-remaining-flags">9. Panel structure and
 remaining flags</a></li>
 <li><a href="#validation" id="toc-validation">10. Validation</a></li>
-<li><a href="#how-to-use-the-output" id="toc-how-to-use-the-output">11.
-How to use the output</a></li>
-<li><a href="#known-limitations" id="toc-known-limitations">12. Known
+<li><a href="#known-limitations" id="toc-known-limitations">11. Known
 limitations</a></li>
-<li><a href="#save" id="toc-save">13. Save</a></li>
+<li><a href="#save" id="toc-save">12. Save</a></li>
 </ul>
 </div>
 
+<p>Reads <code>Christchurch Oct2025 to Jun2026 (combined).csv</code>,
+cleans it, and saves
+<code>Christchurch Oct2025 to Jun2026 (cleaned).csv</code>.</p>
 <div id="read-the-data" class="section level1">
 <h1>1. Read the data</h1>
-<pre class="r"><code># This Rmd sits in .../Group-3-DATA201-422-/data/clean, so &quot;.&quot; is that folder.
-# Knitting sets the working directory to the Rmd&#39;s own location.
+<pre class="r"><code># &quot;.&quot; means the folder this Rmd is in (the repo folder), so it works on every computer.
+# Knitting, and running chunks in RStudio, both use that folder automatically.
+# Running chunks in VS Code: open the repo folder first (File &gt; Open Folder).
 data_dir &lt;- &quot;.&quot;
-
-# If you run the chunks in the console instead of knitting, uncomment this:
-# data_dir &lt;- &quot;C:/Users/dianq/OneDrive/Desktop/Data Wrangling/Group-3-DATA201-422-/data/clean&quot;
 
 in_file  &lt;- file.path(data_dir, &quot;Christchurch Oct2025 to Jun2026 (combined).csv&quot;)
 out_file &lt;- file.path(data_dir, &quot;Christchurch Oct2025 to Jun2026 (cleaned).csv&quot;)
 
-file.exists(in_file)</code></pre>
-<pre><code>## [1] TRUE</code></pre>
+# cleaning rules
+price_max        &lt;- 2000   # a nightly price above this is an error
+knn_k            &lt;- 10     # how many similar listings kNN uses to fill a price
+long_stay_nights &lt;- 30     # a minimum stay this long makes a listing long-stay
+random_seed      &lt;- 2026   # makes kNN give the same result every time
+
+if (!file.exists(in_file)) stop(&quot;Cannot find the input file: &quot;, in_file)</code></pre>
 <pre class="r"><code>airbnb &lt;- read_csv(
   in_file,
   col_types = cols(id = col_character(), host_id = col_character(), .default = col_guess())
@@ -569,25 +573,25 @@ on room type, location, minimum nights and how many listings the host
 runs. Month is included so same-month listings are preferred as
 neighbours. Because December to February contain no prices at all,
 values for those months are drawn from listings in other months.</p>
-<pre class="r"><code>set.seed(2026)
+<pre class="r"><code>set.seed(random_seed)
 
+# prices above price_max are errors, so they are filled like missing prices
 airbnb &lt;- airbnb %&gt;%
-  mutate(price_imputed = ifelse(price &gt; 2000, NA, price))   # 27 impossible values
+  mutate(price_imputed = ifelse(price &gt; price_max, NA, price))
 
 airbnb &lt;- kNN(airbnb,
               variable = &quot;price_imputed&quot;,
               dist_var = c(&quot;room_type&quot;, &quot;latitude&quot;, &quot;longitude&quot;,
                            &quot;minimum_nights_filled&quot;,
                            &quot;calculated_host_listings_count&quot;, &quot;month_year&quot;),
-              k = 10, imp_var = FALSE)
+              k = knn_k, imp_var = FALSE)
 
 airbnb &lt;- airbnb %&gt;%
-  mutate(price_was_imputed = is.na(price) | price &gt; 2000)
+  mutate(price_was_imputed = is.na(price) | price &gt; price_max)
 
 sum(airbnb$price_was_imputed)</code></pre>
 <pre><code>## [1] 10694</code></pre>
-<pre class="r"><code>sum(is.na(airbnb$price_imputed))</code></pre>
-<pre><code>## [1] 0</code></pre>
+<pre class="r"><code>if (anyNA(airbnb$price_imputed)) stop(&quot;Some prices are still missing after kNN&quot;)</code></pre>
 <p>The original <code>price</code> column is kept unchanged,
 <code>price_imputed</code> holds the filled version, and
 <code>price_was_imputed</code> marks which rows differ.</p>
@@ -617,8 +621,8 @@ sum(airbnb$price_was_imputed)</code></pre>
   group_by(id) %&gt;%
   mutate(months_present = n_distinct(month_year)) %&gt;%
   ungroup() %&gt;%
-  mutate(in_all_9_months = months_present == 9,
-         long_stay = minimum_nights_filled &gt;= 30,
+  mutate(in_all_9_months = months_present == length(month_levels),
+         long_stay = minimum_nights_filled &gt;= long_stay_nights,
          name = trimws(name))
 
 table(airbnb$months_present)</code></pre>
@@ -636,9 +640,10 @@ excluding from tourist-price analysis.</p>
 </div>
 <div id="validation" class="section level1">
 <h1>10. Validation</h1>
-<pre class="r"><code>sum(duplicated(airbnb[, c(&quot;id&quot;, &quot;month_year&quot;)]))   # expect 0</code></pre>
-<pre><code>## [1] 0</code></pre>
-<pre class="r"><code>range(airbnb$latitude)</code></pre>
+<pre class="r"><code>if (anyDuplicated(airbnb[, c(&quot;id&quot;, &quot;month_year&quot;)]) &gt; 0) {
+  stop(&quot;A listing appears twice in the same month&quot;)
+}
+range(airbnb$latitude)</code></pre>
 <pre><code>## [1] -43.86751 -43.41634</code></pre>
 <pre class="r"><code>range(airbnb$longitude)</code></pre>
 <pre><code>## [1] 172.4334 173.0970</code></pre>
@@ -673,20 +678,8 @@ excluding from tourist-price analysis.</p>
 173.10 longitude, which is Christchurch City including Banks Peninsula.
 No stray points.</p>
 </div>
-<div id="how-to-use-the-output" class="section level1">
-<h1>11. How to use the output</h1>
-<ul>
-<li><strong>Observed prices only</strong> - filter
-<code>price_was_imputed == FALSE</code>.</li>
-<li><strong>Balanced comparisons</strong> - filter
-<code>in_all_9_months</code>.</li>
-<li><strong>Month-over-month price comparisons</strong> - note that
-prices before December 2025 and after February 2026 sit at noticeably
-different levels, so the two periods are not directly comparable.</li>
-</ul>
-</div>
 <div id="known-limitations" class="section level1">
-<h1>12. Known limitations</h1>
+<h1>11. Known limitations</h1>
 <ol style="list-style-type: decimal">
 <li>December 2025 to February 2026 contain no observed prices, so those
 values are the least reliable in the dataset.</li>
@@ -697,7 +690,7 @@ computed on <code>price_imputed</code> will be slightly too small.</li>
 </ol>
 </div>
 <div id="save" class="section level1">
-<h1>13. Save</h1>
+<h1>12. Save</h1>
 <pre class="r"><code>airbnb &lt;- airbnb %&gt;% arrange(month_date, id)
 write_csv(airbnb, out_file)
 
