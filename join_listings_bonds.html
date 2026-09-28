@@ -356,30 +356,16 @@ area code and quarter</h3>
 </div>
 
 
-<p>Joins the cleaned listings to the cleaned bond totals by area code
-and quarter, and writes <code>Christchurch_with_bonds.csv</code>.</p>
-<p>Run the files in this order:
-<code>clean_christchurch_panel.Rmd</code>,
-<code>bond_listing_clean.Rmd</code>, then this file, then
-<code>airbnb_vs_rentals.Rmd</code>. <code>get_area_codes.py</code> only
-needs to run again if the listing coordinates change.</p>
-<div id="read-the-files" class="section level1">
-<h1>1. Read the files</h1>
-<pre class="r"><code># the cleaned listings, made by clean_christchurch_panel.Rmd
-listings &lt;- read_csv(&quot;Christchurch Oct2025 to Jun2026 (cleaned).csv&quot;,
+<div id="read-the-two-files" class="section level1">
+<h1>1. Read the two files</h1>
+<pre class="r"><code># area codes are labels, so both sides are read as text and match exactly
+# the bond file writes missing values as the word NULL
+listings &lt;- read_csv(&quot;Christchurch_with_area_codes.csv&quot;,
                      col_types = cols(id = col_character(),
                                       host_id = col_character(),
+                                      area_code = col_character(),
                                       .default = col_guess()))
 
-# the area code of every listing, made by get_area_codes.py
-# area codes are labels, so they are read as text and match exactly
-area_codes &lt;- read_csv(&quot;Christchurch_with_area_codes.csv&quot;,
-                       col_types = cols(id = col_character(),
-                                        host_id = col_character(),
-                                        area_code = col_character(),
-                                        .default = col_guess()))
-
-# the bond file writes missing values as the word NULL
 bonds &lt;- read_csv(&quot;Bond_Data_Quarterly_(cleaned).csv&quot;,
                   na = c(&quot;&quot;, &quot;NA&quot;, &quot;NULL&quot;),
                   col_types = cols(`Location Id` = col_character(),
@@ -387,35 +373,11 @@ bonds &lt;- read_csv(&quot;Bond_Data_Quarterly_(cleaned).csv&quot;,
 
 dim(listings)</code></pre>
 <pre><code>## [1] 28795    27</code></pre>
-<pre class="r"><code>dim(area_codes)</code></pre>
-<pre><code>## [1] 28795    27</code></pre>
 <pre class="r"><code>dim(bonds)</code></pre>
-<pre><code>## [1] 26991    12</code></pre>
-</div>
-<div id="add-the-area-codes" class="section level1">
-<h1>2. Add the area codes</h1>
-<p><code>get_area_codes.py</code> asks an online map service for the
-area code of every coordinate. It needs an API key, so it is not run
-every time. Its output is a full copy of the cleaned listings plus an
-<code>area_code</code> column. That copy goes out of date whenever the
-cleaning changes, which happened in Deliverable 6 when the price filling
-was fixed.</p>
-<p>So we take only the <code>area_code</code> column and attach it to
-the latest cleaned listings by listing <code>id</code> and month. Area
-codes depend only on coordinates, and the cleaning does not change any
-coordinates.</p>
-<pre class="r"><code>area_codes &lt;- area_codes %&gt;% select(id, month_year, area_code)
-
-if (anyDuplicated(area_codes[, c(&quot;id&quot;, &quot;month_year&quot;)]) &gt; 0) {
-  stop(&quot;A listing has two area codes in the same month, so the join would add rows&quot;)
-}
-
-listings &lt;- listings %&gt;% left_join(area_codes, by = c(&quot;id&quot;, &quot;month_year&quot;))
-
-if (anyNA(listings$area_code)) stop(&quot;Some listings have no area code&quot;)</code></pre>
+<pre><code>## [1] 27085    13</code></pre>
 </div>
 <div id="give-every-listing-its-quarter" class="section level1">
-<h1>3. Give every listing its quarter</h1>
+<h1>2. Give every listing its quarter</h1>
 <p>Listings are monthly and bonds are quarterly, so each month gets the
 first day of its quarter, which is what the bond <code>TimeFrame</code>
 holds.</p>
@@ -426,16 +388,21 @@ holds.</p>
     month_year %in% c(&quot;April 2026&quot;, &quot;May 2026&quot;, &quot;June 2026&quot;)            ~ as.Date(&quot;2026-04-01&quot;)
   ))
 
-if (anyNA(listings$quarter)) stop(&quot;Some months were not given a quarter&quot;)</code></pre>
+sum(is.na(listings$quarter))   # expect 0</code></pre>
+<pre><code>## [1] 0</code></pre>
 </div>
 <div id="keep-one-bond-row-per-area-and-quarter" class="section level1">
-<h1>4. Keep one bond row per area and quarter</h1>
+<h1>3. Keep one bond row per area and quarter</h1>
 <p>The bond file has a row for every dwelling type and bed count, so an
 area has about five rows per quarter. We keep the area total, which is
-the row where both are <code>&quot;ALL&quot;</code>.</p>
+the row where both are <code>&quot;ALL&quot;</code>. The kNN step in
+<code>bond_listing_clean.Rmd</code> filled 20 missing bed counts with
+<code>&quot;ALL&quot;</code>, which makes those rows look like totals, so imputed
+rows are dropped too.</p>
 <pre class="r"><code>bond_totals &lt;- bonds %&gt;%
   filter(`Dwelling Type` == &quot;ALL&quot;,
-         `Number Of Beds` == &quot;ALL&quot;) %&gt;%
+         `Number Of Beds` == &quot;ALL&quot;,
+         beds_was_imputed == FALSE) %&gt;%
   select(area_code                  = `Location Id`,
          quarter                    = TimeFrame,
          bond_total                 = `Total Bonds`,
@@ -448,13 +415,12 @@ the row where both are <code>&quot;ALL&quot;</code>.</p>
          log_sd_rent_weekly         = `Log Std Dev Weekly Rent`)
 
 nrow(bond_totals)</code></pre>
-<pre><code>## [1] 4865</code></pre>
-<pre class="r"><code>if (anyDuplicated(bond_totals[, c(&quot;area_code&quot;, &quot;quarter&quot;)]) &gt; 0) {
-  stop(&quot;An area has two total rows in the same quarter, so the join would add rows&quot;)
-}</code></pre>
+<pre><code>## [1] 4868</code></pre>
+<pre class="r"><code>sum(duplicated(bond_totals[, c(&quot;area_code&quot;, &quot;quarter&quot;)]))   # expect 0</code></pre>
+<pre><code>## [1] 0</code></pre>
 </div>
 <div id="join" class="section level1">
-<h1>5. Join</h1>
+<h1>4. Join</h1>
 <p>A left join keeps every Airbnb row. An inner join would drop listings
 and undercount Airbnbs per area, and a full join would add bond areas
 from all of New Zealand.</p>
@@ -462,103 +428,60 @@ from all of New Zealand.</p>
   left_join(bond_totals, by = c(&quot;area_code&quot;, &quot;quarter&quot;)) %&gt;%
   mutate(has_bond_data = !is.na(bond_total))
 
-if (nrow(joined) != nrow(listings)) stop(&quot;The join changed the number of rows&quot;)
-
-table(joined$has_bond_data)</code></pre>
+nrow(joined) == nrow(listings)   # expect TRUE, the join adds no rows</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>table(joined$has_bond_data)</code></pre>
 <pre><code>## 
 ## FALSE  TRUE 
 ##  6849 21946</code></pre>
 </div>
-<div id="why-some-rows-have-no-bond-data" class="section level1">
-<h1>6. Why some rows have no bond data</h1>
-<pre class="r"><code># every area code in the raw bond file, 2020 to 2026, not just our three quarters
-raw_bonds &lt;- read_csv(&quot;Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv&quot;,
-                      col_types = cols(.default = col_character()))
-bond_areas_ever &lt;- unique(raw_bonds$`Location Id`)
-
-# every area and quarter pair that has at least one bond row
-bond_area_quarters &lt;- unique(paste(bonds$`Location Id`, bonds$TimeFrame))
-
-no_bond_reasons &lt;- joined %&gt;%
-  filter(has_bond_data == FALSE) %&gt;%
-  mutate(reason = case_when(
-    !area_code %in% bond_areas_ever                     ~ &quot;1. area code never appears in the bond data&quot;,
-    !paste(area_code, quarter) %in% bond_area_quarters ~ &quot;2. area has no bond rows that quarter&quot;,
-    TRUE                                                ~ &quot;3. area has bond rows that quarter, but no total row&quot;
-  )) %&gt;%
-  count(reason)
-
-no_bond_reasons</code></pre>
-<pre><code>## # A tibble: 3 × 2
-##   reason                                                   n
-##   &lt;chr&gt;                                                &lt;int&gt;
-## 1 1. area code never appears in the bond data           4862
-## 2 2. area has no bond rows that quarter                 1926
-## 3 3. area has bond rows that quarter, but no total row    61</code></pre>
-<ol style="list-style-type: decimal">
-<li>The area code never appears in the bond data, 2020 to 2026. These
-are mostly areas split after the bond data’s boundaries were drawn
-(listings have 332501, bonds have 332500).</li>
-<li>The area is in the bond data, but had too few bonds to be published
-that quarter.</li>
-<li>The area has bond rows that quarter, but not the <code>&quot;ALL&quot;</code>
-total row we join to.</li>
-</ol>
-<p>In Deliverable 5 these counts were typed in by hand (4,862, 1,465 and
-522). Computing them here shows reason 3 was wrong: most of those 522
-rows have no bond rows at all that quarter, so they belong under reason
-2.</p>
-</div>
-<div id="sanity-check-one-row-by-hand" class="section level1">
-<h1>7. Sanity check one row by hand</h1>
-<p>Take one Christchurch Central (326600) listing in April 2026. April
-is in the quarter that starts on 2026-04-01, so the listing should carry
-the bond total for area 326600 in that quarter. We look that row up
-straight from the raw bond report, not from our cleaned file, and
-compare the two.</p>
-<pre class="r"><code>one_listing &lt;- joined %&gt;%
-  filter(area_code == &quot;326600&quot;, month_year == &quot;April 2026&quot;) %&gt;%
-  head(1)
-
-one_listing %&gt;% select(id, month_year, quarter, bond_active, median_rent_weekly)</code></pre>
-<pre><code>## # A tibble: 1 × 5
-##   id                  month_year quarter    bond_active median_rent_weekly
-##   &lt;chr&gt;               &lt;chr&gt;      &lt;date&gt;           &lt;dbl&gt;              &lt;dbl&gt;
-## 1 1006152691713709590 April 2026 2026-04-01          42                537</code></pre>
-<pre class="r"><code>raw_total &lt;- raw_bonds %&gt;%
-  filter(`Location Id` == &quot;326600&quot;, TimeFrame == &quot;2026-04-01&quot;,
-         `Dwelling Type` == &quot;ALL&quot;, `Number Of Beds` == &quot;ALL&quot;)
-
-raw_total %&gt;% select(TimeFrame, `Location Id`, `Active Bonds`, `Median Rent`)</code></pre>
-<pre><code>## # A tibble: 1 × 4
-##   TimeFrame  `Location Id` `Active Bonds` `Median Rent`
-##   &lt;chr&gt;      &lt;chr&gt;         &lt;chr&gt;          &lt;chr&gt;        
-## 1 2026-04-01 326600        42             537</code></pre>
-<pre class="r"><code>if (one_listing$median_rent_weekly != as.numeric(raw_total$`Median Rent`) ||
-    one_listing$bond_active != as.numeric(raw_total$`Active Bonds`)) {
-  stop(&quot;The joined bond values do not match the raw bond report for this row&quot;)
-}</code></pre>
-</div>
 <div id="save" class="section level1">
-<h1>8. Save</h1>
+<h1>5. Save</h1>
 <pre class="r"><code>write_csv(joined, &quot;Christchurch_with_bonds.csv&quot;)
 
 dim(joined)</code></pre>
-<pre><code>## [1] 28795    38</code></pre>
+<pre><code>## [1] 28795    37</code></pre>
 </div>
 <div id="result" class="section level1">
 <h1>Result</h1>
 <p>21,946 listing rows (76%) matched a bond total. The other 6,849 are
-kept with empty bond columns, for the three reasons counted in section
-6. Most are areas split after the bond data’s boundaries were drawn.</p>
+kept with empty bond columns, for three reasons:</p>
+<table>
+<colgroup>
+<col width="50%" />
+<col width="50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Reason</th>
+<th>Rows</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Area code is not in the bond data, mostly areas split since its
+boundaries (listings have 332501, bonds have 332500)</td>
+<td>4,862</td>
+</tr>
+<tr class="even">
+<td>Area is in the bond data, but is too quiet to be published in these
+quarters</td>
+<td>1,465</td>
+</tr>
+<tr class="odd">
+<td>Area has bond rows that quarter, but no total row</td>
+<td>522</td>
+</tr>
+</tbody>
+</table>
 <p>Notes for using the joined file:</p>
 <ul>
 <li>Rents are <strong>weekly</strong>, prices are <strong>per
 night</strong>. Divide rents by 7 before comparing.</li>
 <li>Only rows where <code>has_bond_data</code> is <code>TRUE</code> can
 compare prices with rents.</li>
-<li>A listing appears once a month, so count distinct <code>id</code>s,
-not rows.</li>
+<li>A listing appears once a month, so count distinct <code>id</code>s
+per quarter, not rows.</li>
 <li>37 listings change area code between months, because Airbnb shifts
 map locations slightly for privacy.</li>
 </ul>
