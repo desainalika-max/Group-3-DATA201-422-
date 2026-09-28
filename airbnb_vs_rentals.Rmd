@@ -1,267 +1,149 @@
 ---
 title: "Airbnb vs Long-Term Rentals in Christchurch"
-subtitle: "Deliverable 5 questions, October 2025 - June 2026 (revised in Deliverable 6)"
+subtitle: "Deliverable 5 questions, October 2025 - June 2026"
 output: html_document
 ---
 
-Answers the three Deliverable 5 questions from `Christchurch_with_bonds.csv`.
-Knit `join_listings_bonds.Rmd` first, because it makes that file.
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-# install once if needed: install.packages(c("dplyr", "readr"))
 library(dplyr)
 library(readr)
 ```
 
-```{r settings}
-# values used more than once below, so they are set in one place
-central_area <- "326600"      # SA2 area code of Christchurch Central
-big_host     <- "482671075"   # host with 7 listings at one Central address
-min_listings <- 20            # an area needs this many listings to be ranked in question 2
-count_month  <- "June 2026"   # the month used to count Airbnbs in question 3
-days_per_week <- 7            # bond rents are weekly, Airbnb prices are per night
-```
-
-```{r read}
+```{r}
 # made by join_listings_bonds.Rmd, so knit that first
 joined <- read_csv("Christchurch_with_bonds.csv",
                    col_types = cols(id = col_character(),
                                     host_id = col_character(),
                                     area_code = col_character(),
                                     .default = col_guess()))
-
-# stop if a listing appears twice in the same month
-if (anyDuplicated(joined[, c("id", "month_year")]) > 0) {
-  stop("The joined file has a listing twice in the same month")
-}
 ```
-
-**How the medians are counted (changed in Deliverable 6).** The joined file has one row
-per listing per month. In Deliverable 5 we took medians over rows, so a listing with a
-price in six months counted six times and a listing seen once counted once. Now every
-listing counts once: we first take each listing's own median price, then the median of
-those.
 
 # 1. Median Airbnb price in Christchurch Central (326600)
 
-```{r central}
-central <- joined %>% filter(area_code == central_area)
+```{r}
+central <- joined %>% filter(area_code == "326600")
 
+nrow(central)             # listing-months
+n_distinct(central$id)    # listings
+```
+
+```{r}
 # observed prices only: Dec-Feb have no prices, and prices over $2,000 are errors
 observed <- central %>% filter(price_was_imputed == FALSE)
 
-nrow(observed)             # listing-months with a real price
-n_distinct(observed$id)    # listings
-
-# how many listings have a real price in 1, 2, ... 6 months
-table(table(observed$id))
+nrow(observed)
+median(observed$price)
 ```
 
-```{r central-median}
-# one price per listing: its median over the months it has a real price
-central_listings <- observed %>%
-  group_by(id) %>%
-  summarise(host_id = first(host_id),
-            price = median(price))
+```{r}
+# check 1: include the imputed prices
+median(central$price_imputed)
 
-central_median <- median(central_listings$price)
-central_median
-
-# the Deliverable 5 way, every listing-month counted once, for comparison
-old_central_median <- median(observed$price)
-old_central_median
-```
-
-## Does one host skew the median?
-
-Host `r big_host` has 7 listings at one Central address. In Deliverable 5 each of them
-counted up to six times, once per month, and the price cleaning had copied one filled
-price to all 7 (fixed in `clean_christchurch_panel.Rmd`). We check the median with that
-host, and with the biggest hosts, left out.
-
-```{r hosts}
-# the hosts with the most Central listings
-host_counts <- central_listings %>% count(host_id, sort = TRUE)
-head(host_counts, 5)
-
-# share of Central listings run by the three biggest hosts
-top3_hosts <- head(host_counts$host_id, 3)
-top3_share <- round(100 * mean(central_listings$host_id %in% top3_hosts))
-top3_share
-
-# median without the host with 7 listings at one address
-median_without_big_host <- median(central_listings$price[central_listings$host_id != big_host])
-median_without_big_host
-
-# median without the three biggest hosts
-median_without_top3 <- median(central_listings$price[!central_listings$host_id %in% top3_hosts])
-median_without_top3
-```
-
-```{r central-checks}
-# check: include the filled prices (Dec-Feb and the gaps), still one price per listing
-central_filled <- central %>%
-  group_by(id) %>%
-  summarise(price = median(price_imputed))
-
-median(central_filled$price)
-
-# for comparison: all of Christchurch, one price per listing
-city_listings <- joined %>%
-  filter(price_was_imputed == FALSE) %>%
+# check 2: count each listing once
+per_listing <- observed %>%
   group_by(id) %>%
   summarise(price = median(price))
 
-city_median <- median(city_listings$price)
-city_median
+median(per_listing$price)
+
+# for comparison: all of Christchurch
+median(joined$price[joined$price_was_imputed == FALSE])
 ```
 
-## Result: $`r central_median` per night
+## Result: $238 per night
 
 | Median price per night | |
 |---|---|
-| Christchurch Central (`r central_area`) | **$`r central_median`** |
-| All of Christchurch | $`r city_median` |
-| Central costs more by | $`r central_median - city_median` (`r round(100 * (central_median - city_median) / city_median)`%) |
+| Christchurch Central (326600) | **$238** |
+| All of Christchurch | $205 |
+| Central costs more by | $33 (16%) |
 
-- Based on `r nrow(observed)` real prices from `r nrow(central_listings)` listings, each
-  listing counted once. Counting every listing-month instead gives
-  $`r old_central_median`, the Deliverable 5 answer.
-- Leaving out host `r big_host` and its 7 listings at one address gives
-  $`r median_without_big_host`, so that host does not skew the median once each listing
-  counts once.
-- The three biggest hosts run `r top3_share`% of Central listings and price below the
-  rest. Without them the median would be $`r round(median_without_top3)`. We keep them, because
-  every one of their listings is a real place a guest can book.
-- Left out: December to February (no prices) and prices over $2,000.
+- Based on 705 real prices from 150 listings.
+- Left out: December to February (no prices) and 8 prices over $2,000.
+- Counting other ways gives $236 and $237, so the answer is stable.
 
 # 2. Largest gap between short- and long-term rental prices
 
-```{r gaps}
+```{r}
 # entire homes with an observed price, nightly stays only, in areas with bond data
 gaps <- joined %>%
   filter(room_type == "Entire home/apt",
          price_was_imputed == FALSE,
          long_stay == FALSE,
          has_bond_data == TRUE) %>%
-  mutate(long_term_per_night = median_rent_weekly / days_per_week,
+  mutate(long_term_per_night = median_rent_weekly / 7,
          gap = price - long_term_per_night)
 
-# one gap per listing and area, its median over the months it has a real price
-# (a few listings move area between months, so they get one row per area)
-gap_listings <- gaps %>%
-  group_by(id, area_code) %>%
-  summarise(ward = first(neighbourhood),
-            price = median(price),
-            long_term_per_night = median(long_term_per_night),
-            gap = median(gap)) %>%
-  ungroup()
-
-n_distinct(gap_listings$id)       # listings
-
-city_gap <- median(gap_listings$gap)
-city_gap
+nrow(gaps)
+n_distinct(gaps$id)
+median(gaps$gap)
 ```
 
-```{r gap-plot, fig.height = 6}
-# gap for every listing, grouped by ward (outliers hidden so the boxes are readable)
+```{r, fig.height = 6}
+# gap for every Airbnb, grouped by ward (outliers hidden so the boxes are readable)
 par(mar = c(5, 11, 2, 1))
-boxplot(gap ~ reorder(ward, gap, median), data = gap_listings,
+boxplot(gap ~ reorder(neighbourhood, gap, median), data = gaps,
         horizontal = TRUE, las = 1, outline = FALSE, ylab = "",
         xlab = "Airbnb price minus long-term rent ($ per night)")
 ```
 
-```{r gap-tables}
+```{r}
 # median gap per ward
-ward_gaps <- gap_listings %>%
-  group_by(ward) %>%
-  summarise(listings = n_distinct(id), median_gap = round(median(gap))) %>%
+gaps %>%
+  group_by(neighbourhood) %>%
+  summarise(listings = n_distinct(id), median_gap = median(gap)) %>%
   arrange(desc(median_gap))
 
-ward_gaps
-
-# median gap per area code, for areas with enough listings
-area_gaps <- gap_listings %>%
+# median gap per location id, areas with at least 20 listings
+gaps %>%
   group_by(area_code) %>%
-  summarise(ward = first(ward),
+  summarise(ward = first(neighbourhood),
             listings = n_distinct(id),
-            airbnb_price = round(median(price)),
+            airbnb_price = median(price),
             long_term_per_night = round(median(long_term_per_night)),
-            median_gap = round(median(gap))) %>%
-  filter(listings >= min_listings) %>%
-  arrange(desc(median_gap))
+            median_gap = median(gap)) %>%
+  filter(listings >= 20) %>%
+  arrange(desc(median_gap)) %>%
+  head(5)
 
-head(area_gaps, 5)
-
-# the two wards named in the result
-halswell  <- ward_gaps %>% filter(ward == "Halswell Ward")
-heathcote <- ward_gaps %>% filter(ward == "Heathcote Ward")
-
-top_area <- area_gaps[1, ]
-
-# Banks Peninsula has no bond data at all, so it cannot be ranked
-joined %>%
-  filter(neighbourhood == "Banks Peninsula Ward") %>%
-  count(has_bond_data)
-
-banks_rows <- sum(joined$neighbourhood == "Banks Peninsula Ward")
 ```
 
-## Result: `r top_area$ward`, location `r top_area$area_code`
+## Result: Heathcote Ward, location 332700
 
-| A whole home in `r top_area$area_code` | Per night |
+| A whole home in 332700 | Per night |
 |---|---|
-| Airbnb | $`r top_area$airbnb_price` |
-| Long-term rent | $`r top_area$long_term_per_night` |
-| **Gap** | **$`r top_area$median_gap`** |
+| Airbnb | $344 |
+| Long-term rent | $89 |
+| **Gap** | **$255** |
 
-- Christchurch median gap: $`r round(city_gap)` a night.
-- By ward: Halswell is highest ($`r halswell$median_gap`) but has only
-  `r halswell$listings` listings. Heathcote is next ($`r heathcote$median_gap`) with
-  `r heathcote$listings` listings, and holds the area with the widest gap, so we name
-  Heathcote.
-- Compares entire homes only, using real prices and nightly stays, with each listing
-  counted once. An area needs `r min_listings`+ listings to be ranked.
-- The gap is the median of each listing's own gap, so it can differ by a dollar from
-  the Airbnb price minus the rent, which are medians taken separately.
-- **Caveat:** Banks Peninsula has no bond data (`r format(banks_rows, big.mark = ",")`
-  listing-months). It is full of holiday homes, so the real largest gap may be hidden
-  there.
+- Christchurch median gap: $144 a night.
+- By ward: Halswell is highest ($186) but has only 52 listings. Heathcote is next
+  ($164) with 214 listings, and holds the widest area, so we name Heathcote.
+- Compares entire homes only, using real prices and nightly stays. An area needs
+  20+ listings to be ranked.
 
 # 3. Number of Airbnbs vs rental properties
 
-**Changed in Deliverable 6.** Active bonds count the rentals running at one point in
-time. In every area they are far higher than the bonds lodged in the quarter, so they are
-not new rentals. In Deliverable 5 we counted every Airbnb seen at any time in April, May
-or June. That counts a listing that closed in April and a new one that opened in June as
-two Airbnbs, even though they were never listed at the same time. We now count the
-Airbnbs listed in one month, June 2026, the last month of the quarter.
-
-```{r counts}
-# Airbnbs listed in the count month vs active bonds, in each area with bond data
+```{r}
+# latest quarter (Apr-Jun 2026): Airbnb listings vs active bonds in each area
 counts <- joined %>%
-  filter(month_year == count_month, has_bond_data == TRUE) %>%
+  filter(quarter == as.Date("2026-04-01"), has_bond_data == TRUE) %>%
   group_by(area_code) %>%
   summarise(ward = first(neighbourhood),
             airbnbs = n_distinct(id),
             rentals = first(bond_active)) %>%
   mutate(airbnbs_per_100_rentals = round(100 * airbnbs / rentals))
 
-total_airbnbs <- sum(counts$airbnbs)
-total_rentals <- sum(counts$rentals)
-total_per_100 <- round(100 * total_airbnbs / total_rentals)
-
-total_airbnbs
-total_rentals
-total_per_100
+sum(counts$airbnbs)
+sum(counts$rentals)
 
 counts %>%
   arrange(desc(airbnbs_per_100_rentals)) %>%
   head(5)
 ```
 
-```{r ward-counts, fig.height = 6}
+```{r, fig.height = 6}
 # the same comparison per ward
 ward_counts <- counts %>%
   group_by(ward) %>%
@@ -274,27 +156,19 @@ ward_counts
 par(mar = c(5, 11, 2, 1))
 barplot(ward_counts$airbnbs_per_100_rentals, names.arg = ward_counts$ward,
         horiz = TRUE, las = 1,
-        xlab = paste("Airbnbs per 100 long-term rentals,", count_month))
-
-# rows used in the result table
-central_ward <- ward_counts %>% filter(ward == "Central Ward")
-central_area_counts <- counts %>% filter(area_code == central_area)
+        xlab = "Airbnbs per 100 long-term rentals (Apr-Jun 2026)")
 ```
 
-## Result: `r total_per_100` Airbnbs per 100 rentals
+## Result: 8 Airbnbs per 100 rentals
 
-`r count_month`:
+April to June 2026:
 
 | | Airbnbs | Rentals | Per 100 rentals |
 |---|---|---|---|
-| All areas with bond data | `r format(total_airbnbs, big.mark = ",")` | `r format(total_rentals, big.mark = ",")` | **`r total_per_100`** |
-| Central Ward | `r format(central_ward$airbnbs, big.mark = ",")` | `r format(central_ward$rentals, big.mark = ",")` | `r central_ward$airbnbs_per_100_rentals` |
-| Christchurch Central (`r central_area`) | `r central_area_counts$airbnbs` | `r central_area_counts$rentals` | `r central_area_counts$airbnbs_per_100_rentals` |
+| All areas with bond data | 2,840 | 36,219 | **8** |
+| Central Ward | 1,347 | 7,761 | 17 |
+| Christchurch Central (326600) | 146 | 42 | 348 |
 
-- Airbnbs cluster in the centre. Every ward outside Central has fewer than 10 per 100.
-- Only `r sum(counts$airbnbs > counts$rentals)` areas have more Airbnbs than rentals (see
-  the top five areas above).
-- Counts distinct listings in `r count_month` against active bonds for the April to
-  June 2026 quarter. The Deliverable 5 count over the whole quarter gave 8 per 100.
-- Banks Peninsula is missing, because it has no bond data.
-- **Beds:** cannot be compared. The listings file has no bedrooms column.
+- Airbnbs cluster in the centre. Every ward outside Central has 2 to 9 per 100.
+- Only two areas have more Airbnbs than rentals: 326600 and 327100 (293 vs 276).
+- Counts distinct listings in the quarter against active bonds.
