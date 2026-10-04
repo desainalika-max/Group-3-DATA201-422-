@@ -350,27 +350,29 @@ display: none;
 
 <h1 class="title toc-ignore">Joining the Airbnb Listings to the Bond
 Data</h1>
-<h3 class="subtitle">Christchurch, October 2025 - June 2026, joined on
-area code and quarter</h3>
+<h3 class="subtitle">Christchurch, every month from October 2025, joined
+on area code and quarter</h3>
 
 </div>
 
 
-<p>Reads <code>Christchurch_with_area_codes.csv</code> and
-<code>Bond_Data_Quarterly_(cleaned).csv</code>, joins them on area code
-and quarter, and saves <code>Christchurch_with_bonds.csv</code>.</p>
-<div id="read-the-two-files" class="section level1">
-<h1>1. Read the two files</h1>
-<pre class="r"><code>listings_file  &lt;- &quot;Christchurch_with_area_codes.csv&quot;
-bonds_file     &lt;- &quot;Bond_Data_Quarterly_(cleaned).csv&quot;
-raw_bonds_file &lt;- &quot;Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv&quot;   # only used for the sanity check
-out_file       &lt;- &quot;Christchurch_with_bonds.csv&quot;</code></pre>
+<p>Reads <code>output/Christchurch_cleaned.csv</code>, the area codes in
+<code>data/Christchurch_with_area_codes.csv</code> and
+<code>output/Bond_Data_Quarterly_(cleaned).csv</code>, joins them on
+area code and quarter, and saves
+<code>output/Christchurch_with_bonds.csv</code>.</p>
+<div id="read-the-files" class="section level1">
+<h1>1. Read the files</h1>
+<pre class="r"><code>listings_file   &lt;- &quot;output/Christchurch_cleaned.csv&quot;
+area_codes_file &lt;- &quot;data/Christchurch_with_area_codes.csv&quot;   # made by get_area_codes.py
+bonds_file      &lt;- &quot;output/Bond_Data_Quarterly_(cleaned).csv&quot;
+raw_bonds_file  &lt;- &quot;data/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv&quot;   # only used for the sanity check
+out_file        &lt;- &quot;output/Christchurch_with_bonds.csv&quot;</code></pre>
 <pre class="r"><code># area codes are labels, so both sides are read as text and match exactly
 # the bond file writes missing values as the word NULL
 listings &lt;- read_csv(listings_file,
                      col_types = cols(id = col_character(),
                                       host_id = col_character(),
-                                      area_code = col_character(),
                                       .default = col_guess()))
 
 bonds &lt;- read_csv(bonds_file,
@@ -379,9 +381,38 @@ bonds &lt;- read_csv(bonds_file,
                                    .default = col_guess()))
 
 dim(listings)</code></pre>
-<pre><code>## [1] 28795    27</code></pre>
+<pre><code>## [1] 35796    26</code></pre>
 <pre class="r"><code>dim(bonds)</code></pre>
-<pre><code>## [1] 27085    13</code></pre>
+<pre><code>## [1] 26991    13</code></pre>
+<p><code>get_area_codes.py</code> needs an API key, so it cannot be
+rerun on every computer. Instead of reading its output as the listings,
+we only take the area code of each coordinate from it. That way the
+newest cleaned listings, including new months, still get their area
+codes. Listings at a coordinate it has never seen get no area code until
+<code>get_area_codes.py</code> is run again.</p>
+<pre class="r"><code># coordinates are rounded to 7 decimal places (about 1 cm) before matching, because a few
+# have extra digits that changed in the last place when get_area_codes.py saved them
+area_codes &lt;- read_csv(area_codes_file,
+                       col_types = cols(area_code = col_character(),
+                                        .default = col_guess())) %&gt;%
+  transmute(latitude_rounded = round(latitude, 7),
+            longitude_rounded = round(longitude, 7),
+            area_code) %&gt;%
+  distinct()
+
+if (anyDuplicated(area_codes[, c(&quot;latitude_rounded&quot;, &quot;longitude_rounded&quot;)]) &gt; 0) {
+  stop(&quot;A coordinate has two area codes&quot;)
+}
+
+listings &lt;- listings %&gt;%
+  mutate(latitude_rounded = round(latitude, 7),
+         longitude_rounded = round(longitude, 7)) %&gt;%
+  left_join(area_codes, by = c(&quot;latitude_rounded&quot;, &quot;longitude_rounded&quot;)) %&gt;%
+  select(-latitude_rounded, -longitude_rounded)
+
+# listing rows with no area code yet (new coordinates)
+sum(is.na(listings$area_code))</code></pre>
+<pre><code>## [1] 224</code></pre>
 </div>
 <div id="give-every-listing-its-quarter" class="section level1">
 <h1>2. Give every listing its quarter</h1>
@@ -389,11 +420,7 @@ dim(listings)</code></pre>
 first day of its quarter, which is what the bond <code>TimeFrame</code>
 holds.</p>
 <pre class="r"><code>listings &lt;- listings %&gt;%
-  mutate(quarter = case_when(
-    month_year %in% c(&quot;October 2025&quot;, &quot;November 2025&quot;, &quot;December 2025&quot;) ~ as.Date(&quot;2025-10-01&quot;),
-    month_year %in% c(&quot;January 2026&quot;, &quot;February 2026&quot;, &quot;March 2026&quot;)    ~ as.Date(&quot;2026-01-01&quot;),
-    month_year %in% c(&quot;April 2026&quot;, &quot;May 2026&quot;, &quot;June 2026&quot;)            ~ as.Date(&quot;2026-04-01&quot;)
-  ))
+  mutate(quarter = floor_date(month_date, &quot;quarter&quot;))
 
 if (anyNA(listings$quarter)) stop(&quot;Some months were not given a quarter&quot;)</code></pre>
 </div>
@@ -421,7 +448,7 @@ rows are dropped too.</p>
          log_sd_rent_weekly         = `Log Std Dev Weekly Rent`)
 
 nrow(bond_totals)</code></pre>
-<pre><code>## [1] 4868</code></pre>
+<pre><code>## [1] 4865</code></pre>
 <pre class="r"><code>if (anyDuplicated(bond_totals[, c(&quot;area_code&quot;, &quot;quarter&quot;)]) &gt; 0) {
   stop(&quot;An area has two bond totals in the same quarter, so the join would add rows&quot;)
 }</code></pre>
@@ -440,7 +467,7 @@ if (nrow(joined) != nrow(listings)) stop(&quot;The join changed the number of ro
 table(joined$has_bond_data)</code></pre>
 <pre><code>## 
 ## FALSE  TRUE 
-##  6849 21946</code></pre>
+## 13850 21946</code></pre>
 </div>
 <div id="sanity-check-one-row-by-hand" class="section level1">
 <h1>5. Sanity check one row by hand</h1>
@@ -481,10 +508,14 @@ matched the right area and the right quarter.</p>
 <pre class="r"><code>write_csv(joined, out_file)
 
 dim(joined)</code></pre>
-<pre><code>## [1] 28795    37</code></pre>
+<pre><code>## [1] 35796    37</code></pre>
 </div>
 <div id="result" class="section level1">
 <h1>Result</h1>
+<p>In this run, 21,946 of 35,796 listing rows matched a bond total. The
+bond data ends at the quarter starting 2026-04-01, so listing months
+after that have no bond data yet. The numbers below are for October 2025
+to June 2026 (Deliverable 5).</p>
 <p>21,946 listing rows (76%) matched a bond total. The other 6,849 are
 kept with empty bond columns, for three reasons:</p>
 <table>
