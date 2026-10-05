@@ -313,3 +313,36 @@ What is different from the plan in Deliverable 6:
 
 All the details (every code change and why, where we used the Week 10 lecture, and what we
 checked) are in `Deliverable7_changes.md`.
+
+### Rental analysis updates — Sudheesh
+
+I updated `src/airbnb_vs_rentals.Rmd` to make the report easier to maintain
+and check:
+
+- Question 2's largest-gap result now comes from the ranked area data.
+- Question 3's result heading and counts table now use calculated values.
+- A required-column check stops the report if the input CSV is missing
+  a column needed for the analysis.
+- Rental-count checks detect missing, non-positive or conflicting counts
+  before calculating ratios.
+- A new interpretation and limitations section explains what the
+  price gaps and property counts represent.
+
+The updated report is saved in `output/airbnb_vs_rentals.html`.
+
+#### How to check the results
+
+- For Question 2, compare the result with the first row of the ranked
+  area table.
+- For Question 3, compare the result table with the printed area and
+  ward counts.
+- If a validation check stops the report, investigate the input data
+  using the error message.
+
+The rental-count comparison still uses April–June 2026, controlled by
+`latest_quarter`. It does not automatically select a newer quarter.
+
+Validation: the report rendered successfully after the changes.
+I also temporarily requested a nonexistent column to confirm that
+the required-column check stopped with the expected error, then
+restored the correct column name and rendered again.
