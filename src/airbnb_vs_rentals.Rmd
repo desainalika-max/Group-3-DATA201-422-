@@ -184,19 +184,49 @@ barplot(ward_counts$airbnbs_per_100_rentals, names.arg = ward_counts$ward,
         xlab = "Airbnbs per 100 long-term rentals (Apr-Jun 2026)")
 ```
 
-## Result: 8 Airbnbs per 100 rentals
+```{r count_results}
+# Use the calculated counts to produce the report text and table.
+total_airbnbs <- sum(counts$airbnbs)
+total_rentals <- sum(counts$rentals)
 
-April to June 2026:
+if (is.na(total_rentals) || total_rentals <= 0) {
+  stop("The total rental count must be present and positive.")
+}
+
+overall_ratio <- round(100 * total_airbnbs / total_rentals)
+
+central_ward <- ward_counts %>%
+  filter(ward == "Central Ward")
+
+central_location <- counts %>%
+  filter(area_code == central_area)
+
+if (nrow(central_ward) != 1 || nrow(central_location) != 1) {
+  stop("Expected one Central Ward row and one Christchurch Central row.")
+}
+
+quarter_start <- format(latest_quarter, "%B")
+quarter_end <- format(
+  seq(latest_quarter, by = "month", length.out = 3)[3],
+  "%B %Y"
+)
+
+areas_above_100 <- sum(counts$airbnbs > counts$rentals)
+```
+
+## Result: `r overall_ratio` Airbnbs per 100 rentals
+
+`r quarter_start` to `r quarter_end`:
 
 | | Airbnbs | Rentals | Per 100 rentals |
 |---|---|---|---|
-| All areas with bond data | 2,840 | 36,219 | **8** |
-| Central Ward | 1,347 | 7,761 | 17 |
-| Christchurch Central (326600) | 146 | 42 | 348 |
+| All areas with bond data | `r format(total_airbnbs, big.mark = ",")` | `r format(total_rentals, big.mark = ",")` | **`r overall_ratio`** |
+| Central Ward | `r central_ward$airbnbs` | `r central_ward$rentals` | `r central_ward$airbnbs_per_100_rentals` |
+| Christchurch Central (`r central_area`) | `r central_location$airbnbs` | `r central_location$rentals` | `r central_location$airbnbs_per_100_rentals` |
 
-- Airbnbs cluster in the centre. Every ward outside Central has 2 to 9 per 100.
-- Only two areas have more Airbnbs than rentals: 326600 and 327100 (293 vs 276).
-- Counts distinct listings in the quarter against active bonds.
+- There are `r areas_above_100` areas with more Airbnb listings than active rental bonds.
+- Airbnb counts represent distinct listing IDs observed during the quarter.
+- The comparison includes only areas with bond data.
 
 # 4. Prices by month
 
