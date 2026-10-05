@@ -10,8 +10,9 @@
 
 
 
+<meta name="date" content="2026-09-13" />
 
-<title>Cleaning and Imputing the Christchurch Airbnb Panel</title>
+<title>Bond Listing Cleaning</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -348,355 +349,225 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">Cleaning and Imputing the Christchurch
-Airbnb Panel</h1>
-<h3 class="subtitle">Inside Airbnb listings, every month from October
-2025</h3>
+<h1 class="title toc-ignore">Bond Listing Cleaning</h1>
+<h3 class="subtitle">Tenancy Services detailed quarterly report,
+filtered to Oct 2025 - Jun 2026</h3>
+<h4 class="date">2026-09-13</h4>
 
 </div>
 
-<div id="TOC">
-<ul>
-<li><a href="#read-the-data" id="toc-read-the-data">1. Read the
-data</a></li>
-<li><a href="#drop-the-empty-column" id="toc-drop-the-empty-column">2.
-Drop the empty column</a></li>
-<li><a href="#month-as-an-ordered-factor-and-a-real-date" id="toc-month-as-an-ordered-factor-and-a-real-date">3. Month as an
-ordered factor and a real date</a></li>
-<li><a href="#dates" id="toc-dates">4. Dates</a></li>
-<li><a href="#reviews-for-listings-that-have-none" id="toc-reviews-for-listings-that-have-none">5. Reviews for listings
-that have none</a></li>
-<li><a href="#host-name" id="toc-host-name">6. Host name</a></li>
-<li><a href="#minimum-nights" id="toc-minimum-nights">7. Minimum
-nights</a></li>
-<li><a href="#price" id="toc-price">8. Price</a>
-<ul>
-<li><a href="#what-the-missingness-looks-like" id="toc-what-the-missingness-looks-like">8.1 What the missingness looks
-like</a></li>
-<li><a href="#the-scattered-gaps-are-not-missing-at-random" id="toc-the-scattered-gaps-are-not-missing-at-random">8.2 The scattered
-gaps are not missing at random</a></li>
-<li><a href="#our-approach" id="toc-our-approach">8.3 Our
-approach</a></li>
-</ul></li>
-<li><a href="#panel-structure-and-remaining-flags" id="toc-panel-structure-and-remaining-flags">9. Panel structure and
-remaining flags</a></li>
-<li><a href="#validation" id="toc-validation">10. Validation</a></li>
-<li><a href="#known-limitations" id="toc-known-limitations">11. Known
-limitations</a></li>
-<li><a href="#save" id="toc-save">12. Save</a></li>
-</ul>
-</div>
 
-<p>Reads <code>output/Christchurch_combined.csv</code> (made by
-<code>combine_months.Rmd</code>), cleans it, and saves
-<code>output/Christchurch_cleaned.csv</code>.</p>
-<p>The numbers written in the text are from the October 2025 to June
-2026 data (Deliverable 4). The tables printed under each chunk are
-worked out again every time this file is knitted, so they include every
-month in <code>data/listings/</code>.</p>
+<p>Reads
+<code>data/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv</code>, cleans
+it, and saves <code>output/Bond_Data_Quarterly_(cleaned).csv</code>.</p>
 <div id="read-the-data" class="section level1">
-<h1>1. Read the data</h1>
-<pre class="r"><code># &quot;.&quot; means the repo folder (set in the setup chunk), so it works on every computer.
-# Knitting, and running chunks in RStudio, both use that folder automatically.
-# Running chunks in VS Code: open the repo folder first (File &gt; Open Folder).
+<h1>1. Read the Data</h1>
+<pre class="r"><code># &quot;.&quot; means the repo folder (set in the setup chunk), so it works on every computer
 data_dir &lt;- &quot;.&quot;
 
-in_file  &lt;- file.path(data_dir, &quot;output&quot;, &quot;Christchurch_combined.csv&quot;)
-out_file &lt;- file.path(data_dir, &quot;output&quot;, &quot;Christchurch_cleaned.csv&quot;)
+in_file &lt;- file.path(data_dir, 
+                     &quot;data&quot;, &quot;Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv&quot;)
 
-# cleaning rules
-price_max        &lt;- 2000   # a nightly price above this is an error
-knn_k            &lt;- 10     # how many similar listings kNN uses to fill a price
-long_stay_nights &lt;- 30     # a minimum stay this long makes a listing long-stay
-random_seed      &lt;- 2026   # makes kNN give the same result every time
+listings_file &lt;- file.path(data_dir,
+                           &quot;output&quot;, &quot;Christchurch_cleaned.csv&quot;)
+#Reads the listings file only to get its date range for filtering months from quarterly
 
-if (!file.exists(in_file)) stop(&quot;Cannot find the input file: &quot;, in_file)</code></pre>
-<pre class="r"><code>airbnb &lt;- read_csv(
+# the same file name that join_listings_bonds.Rmd reads
+out_file &lt;- file.path(data_dir, &quot;output&quot;, &quot;Bond_Data_Quarterly_(cleaned).csv&quot;)
+
+national_total_id &lt;- &quot;-99&quot;   # the Location Id used for the all-of-New-Zealand total
+knn_k             &lt;- 5       # how many similar rows kNN uses to fill a bed count
+random_seed       &lt;- 2026    # makes kNN give the same result every time
+
+if (!file.exists(in_file)) stop(&quot;Cannot find the input file: &quot;, in_file)
+if (!file.exists(listings_file)) stop(&quot;Cannot find the input file: &quot;, listings_file)</code></pre>
+<pre class="r"><code># Location Id is an area code (a label, not a number), so it is read as text
+bonds &lt;- read_csv(
   in_file,
-  col_types = cols(id = col_character(), host_id = col_character(), .default = col_guess())
+  na = c(&quot;&quot;, &quot;NA&quot;, &quot;NULL&quot;),
+  col_types = cols(`Location Id` = col_character(), .default = col_guess())
 )
+dim(bonds)</code></pre>
+<pre><code>## [1] 226080     12</code></pre>
+</div>
+<div id="match-the-timeframe-to-the-listings-panel" class="section level1">
+<h1>2. Match the timeframe to the listings panel</h1>
+<p>Bond data is reported quarterly. The listings panel is monthly.
+Instead of hardcoding which quarters to keep, we read the cleaned
+listings output and matched them against its actual date range. So this
+filter is still correct if the listings panel is edited.</p>
+<pre class="r"><code>airbnb &lt;- read_csv(listings_file, show_col_types = FALSE)
 
-dim(airbnb)</code></pre>
-<pre><code>## [1] 35796    20</code></pre>
-<p><strong>Why character IDs.</strong> The largest <code>id</code> is
-1,709,885,808,209,520,396. A double holds about 15 significant digits,
-so reading these as numbers silently corrupts the last few. They are
-labels, never arithmetic, so character is the correct type. This is the
-same issue that produced the type mismatch in the KNIME workflow.</p>
-</div>
-<div id="drop-the-empty-column" class="section level1">
-<h1>2. Drop the empty column</h1>
-<pre class="r"><code>sum(is.na(airbnb$license))</code></pre>
-<pre><code>## [1] 35796</code></pre>
-<pre class="r"><code>airbnb &lt;- airbnb %&gt;% select(-license)</code></pre>
-<p><code>license</code> is <code>NA</code> in all 28,795 rows. A column
-with zero observed values cannot inform anything and only adds noise to
-the missing-value summary.</p>
-<p><code>neighbourhood_group</code> is kept even though it is the
-constant <code>&quot;Christchurch City&quot;</code>,</p>
-</div>
-<div id="month-as-an-ordered-factor-and-a-real-date" class="section level1">
-<h1>3. Month as an ordered factor and a real date</h1>
-<pre class="r"><code># month_date is made by combine_months.Rmd, so the months are taken from the data
-# (no list of months here, so a new month needs no change)
-month_levels &lt;- format(sort(unique(airbnb$month_date)), &quot;%B %Y&quot;)
+listings_start &lt;- min(airbnb$month_date)
+listings_end   &lt;- max(airbnb$month_date)
 
-airbnb &lt;- airbnb %&gt;%
-  mutate(month_year = factor(month_year, levels = month_levels, ordered = TRUE))
+c(listings_start, listings_end)</code></pre>
+<pre><code>## [1] &quot;2025-10-01&quot; &quot;2026-08-01&quot;</code></pre>
+<pre class="r"><code>bonds &lt;- bonds %&gt;% mutate(TimeFrame = as.Date(TimeFrame))
 
-table(airbnb$month_year)</code></pre>
-<pre><code>## 
-##  October 2025 November 2025 December 2025  January 2026 February 2026 
-##          2991          3047          3180          3057          3190 
-##    March 2026    April 2026      May 2026     June 2026     July 2026 
-##          3227          3273          3361          3469          3488 
-##   August 2026 
-##          3513</code></pre>
-<p>As plain text the months sort alphabetically, so every grouped
-summary and every x-axis came out April, August, December, February. The
-ordered factor fixes plotting and grouping; <code>month_date</code>
-allows arithmetic and correct time-series joins.</p>
-</div>
-<div id="dates" class="section level1">
-<h1>4. Dates</h1>
-<pre class="r"><code>airbnb &lt;- airbnb %&gt;% mutate(last_review = as.Date(last_review))
-range(airbnb$last_review, na.rm = TRUE)</code></pre>
-<pre><code>## [1] &quot;2014-04-14&quot; &quot;2026-08-13&quot;</code></pre>
-</div>
-<div id="reviews-for-listings-that-have-none" class="section level1">
-<h1>5. Reviews for listings that have none</h1>
-<pre class="r"><code>sum(airbnb$number_of_reviews == 0 &amp; is.na(airbnb$reviews_per_month))</code></pre>
-<pre><code>## [1] 3234</code></pre>
-<pre class="r"><code>airbnb &lt;- airbnb %&gt;%
-  mutate(reviews_per_month = ifelse(number_of_reviews == 0, 0, reviews_per_month))</code></pre>
-<p><strong>Why 0 rather than imputation.</strong> All 2,627 missing
-values sit on listings with <code>number_of_reviews == 0</code>. This is
-a structural blank, not a collection failure: a listing with no reviews
-genuinely receives 0 reviews per month. Imputing a market average would
-invent review activity that never happened.</p>
-<p><strong>Why <code>last_review</code> stays <code>NA</code>.</strong>
-There is no correct date to insert. A never-reviewed listing has no last
-review, and any placeholder would corrupt days-since-review.</p>
-</div>
-<div id="host-name" class="section level1">
-<h1>6. Host name</h1>
-<pre class="r"><code>airbnb &lt;- airbnb %&gt;%
-  arrange(host_id, month_date) %&gt;%
-  group_by(host_id) %&gt;%
-  fill(host_name, .direction = &quot;downup&quot;) %&gt;%
-  ungroup() %&gt;%
-  mutate(host_name = ifelse(is.na(host_name), &quot;Unknown&quot;, host_name))
+quarter_lookup &lt;- bonds %&gt;%
+  distinct(TimeFrame) %&gt;%
+  mutate(quarter_end = TimeFrame %m+% months(3) - days(1)) # We calculate quarter_end so we can check if the quarter&#39;s full 3-month span overlaps the listings&#39; date range, not just whether its start date falls inside it. Calculates the last day of each bond quarter. 
 
-sum(is.na(airbnb$host_name))</code></pre>
-<pre><code>## [1] 0</code></pre>
-<p><strong>Why.</strong> One row was missing a host name. That
-<code>host_id</code> appears 9 times overall and is named in the other
-8, so the value is recovered with certainty rather than guessed.</p>
-</div>
-<div id="minimum-nights" class="section level1">
-<h1>7. Minimum nights</h1>
-<pre class="r"><code>airbnb &lt;- airbnb %&gt;%
-  arrange(id, month_date) %&gt;%
-  group_by(id) %&gt;%
-  mutate(minimum_nights_filled = minimum_nights) %&gt;%
-  fill(minimum_nights_filled, .direction = &quot;downup&quot;) %&gt;%
-  ungroup() %&gt;%
-  mutate(minimum_nights_was_filled = is.na(minimum_nights) &amp; !is.na(minimum_nights_filled))
+target_quarters &lt;- quarter_lookup %&gt;%
+  filter(TimeFrame &lt;= listings_end, quarter_end &gt;= listings_start) %&gt;%
+  pull(TimeFrame) # Extracts the TimeFrame column as a plain list of values (not a table), so it can be used with %in% in the next step.
 
-sum(airbnb$minimum_nights_was_filled)</code></pre>
-<pre><code>## [1] 37</code></pre>
-<p><strong>Why carry rather than impute.</strong>
-<code>minimum_nights</code> is a booking rule the host sets, not a
-market outcome. It changes rarely, and all 37 gaps had a value from the
-same listing in an adjacent month. The original column is kept
-alongside.</p>
+target_quarters</code></pre>
+<pre><code>## [1] &quot;2026-04-01&quot; &quot;2026-01-01&quot; &quot;2025-10-01&quot;</code></pre>
+<pre class="r"><code>bonds &lt;- bonds %&gt;% filter(TimeFrame %in% target_quarters)
+dim(bonds)</code></pre>
+<pre><code>## [1] 27212    12</code></pre>
+<p>Three quarters overlap the listings window: 2025-10-01 (Oct-Dec
+2025),2026-01-01 (Jan-Mar 2026) and 2026-04-01 (Apr-Jun 2026). There is
+no 2026-07-01 quarter yet, since bond data is published a couple of
+months behind the current date and does not yet reach June 2026.</p>
 </div>
-<div id="price" class="section level1">
-<h1>8. Price</h1>
-<p>Price is the only column needing a real imputation decision.</p>
+<div id="column-selection" class="section level1">
+<h1>3. Column selection</h1>
+<p>Unlike the listings data, every column here is kept.
+<code>Total Bonds</code>,<code>Active Bonds</code> and
+<code>Closed Bonds</code> are the stock-side variables needed.
+<code>Median Rent</code>and the other rent statistics are the price-side
+variables. Dropping any of them now would remove information the merge
+specifically needs.</p>
+</div>
+<div id="location-id" class="section level1">
+<h1>4. Location Id</h1>
+<pre class="r"><code>sum(is.na(bonds$`Location Id`)) </code></pre>
+<pre><code>## [1] 94</code></pre>
+<pre class="r"><code>sum(bonds$`Location Id` == national_total_id, na.rm = TRUE)</code></pre>
+<pre><code>## [1] 127</code></pre>
+<p>Missing Location Id. These rows are also blank on every rent
+statistic, so they carry no usable information beyond the row existing
+at all, and there is no defensible value to impute a location with.</p>
+<pre class="r"><code>bonds &lt;- bonds %&gt;% filter(!is.na(`Location Id`), `Location Id` != national_total_id)
+dim(bonds)</code></pre>
+<pre><code>## [1] 26991    12</code></pre>
+<p>When Location Id == -99 it represents an “All of New Zealand” rollup,
+not a real SA2 area. Keeping it would mix a national total into what
+should be a location-level dataset, and it cannot be matched to anything
+in a location-based merge, so it is dropped rather than treated as a
+location like any of the other values.</p>
+</div>
+<div id="types" class="section level1">
+<h1>5. Types</h1>
+<pre class="r"><code>bonds &lt;- bonds %&gt;%
+  mutate(
+    `Dwelling Type` = as.factor(`Dwelling Type`),
+    `Number Of Beds` = as.factor(`Number Of Beds`),
+    `Location Id` = as.factor(`Location Id`)
+  )</code></pre>
+</div>
+<div id="number-of-beds" class="section level1">
+<h1>6. Number Of Beds</h1>
 <div id="what-the-missingness-looks-like" class="section level2">
-<h2>8.1 What the missingness looks like</h2>
-<pre class="r"><code>airbnb %&gt;%
-  group_by(month_year) %&gt;%
-  summarise(rows = n(), price_observed = sum(!is.na(price)),
-            pct_missing = round(mean(is.na(price)) * 100, 1))</code></pre>
-<pre><code>## # A tibble: 11 × 4
-##    month_year     rows price_observed pct_missing
-##    &lt;ord&gt;         &lt;int&gt;          &lt;int&gt;       &lt;dbl&gt;
-##  1 October 2025   2991           2821         5.7
-##  2 November 2025  3047           2835         7  
-##  3 December 2025  3180              0       100  
-##  4 January 2026   3057              0       100  
-##  5 February 2026  3190              0       100  
-##  6 March 2026     3227           3059         5.2
-##  7 April 2026     3273           3069         6.2
-##  8 May 2026       3361           3149         6.3
-##  9 June 2026      3469           3195         7.9
-## 10 July 2026      3488           3173         9  
-## 11 August 2026    3513           3177         9.6</code></pre>
-<p>Two distinct problems:</p>
-<ul>
-<li><strong>December 2025, January 2026 and February 2026 have no prices
-at all.</strong> Not a sample of missing values, the entire column is
-blank in those three snapshots.</li>
-<li><strong>The other six months are 5-8% missing</strong>, scattered
-across listings.</li>
-</ul>
-</div>
-<div id="the-scattered-gaps-are-not-missing-at-random" class="section level2">
-<h2>8.2 The scattered gaps are not missing at random</h2>
-<pre class="r"><code>airbnb %&gt;%
-  filter(!month_year %in% c(&quot;December 2025&quot;, &quot;January 2026&quot;, &quot;February 2026&quot;)) %&gt;%
-  group_by(price_missing = is.na(price)) %&gt;%
-  summarise(rows = n(),
-            pct_zero_availability = round(mean(availability_365 == 0) * 100, 1))</code></pre>
-<pre><code>## # A tibble: 2 × 3
-##   price_missing  rows pct_zero_availability
-##   &lt;lgl&gt;         &lt;int&gt;                 &lt;dbl&gt;
-## 1 FALSE         24478                   0.4
-## 2 TRUE           1891                  65.8</code></pre>
-<p>Among rows with a price, 0.5% have zero availability. Among rows
-missing a price, 62% do. Inside Airbnb derives price from the booking
-calendar, so a listing with no available nights has no price to
-report.</p>
+<h2>6.1 What the missingness looks like</h2>
+<pre class="r"><code>sum(is.na(bonds$`Number Of Beds`))</code></pre>
+<pre><code>## [1] 858</code></pre>
+<pre class="r"><code>bonds %&gt;%
+  group_by(`Dwelling Type`) %&gt;%
+  summarise(rows = n(), missing = sum(is.na(`Number Of Beds`)),
+            pct_missing = round(mean(is.na(`Number Of Beds`)) * 100, 1)) # For each Dwelling Type, counts total rows, how many are missing Number Of Beds, and what percent that is — to check if missingness is concentrated in one type or spread out evenly.</code></pre>
+<pre><code>## # A tibble: 6 × 4
+##   `Dwelling Type`  rows missing pct_missing
+##   &lt;fct&gt;           &lt;int&gt;   &lt;int&gt;       &lt;dbl&gt;
+## 1 ALL             13006     445         3.4
+## 2 Apartment        1057      19         1.8
+## 3 Boarding House    240       9         3.8
+## 4 Flat              698       0         0  
+## 5 House           11720     368         3.1
+## 6 Room              270      17         6.3</code></pre>
+<p>This is distinct from the existing “ALL” factor level (a legitimate
+aggregate-across-beds row). These are individual rows where the specific
+bed-count breakdown was not reported, spread thinly across dwelling
+types rather than concentrated in one category or quarter.</p>
 </div>
 <div id="our-approach" class="section level2">
-<h2>8.3 Our approach</h2>
+<h2>6.2 Our approach</h2>
 <p>We discussed this as a group and decided to use kNN imputation for
-the missing prices. It is one method among several, and we may test
+the missing bed counts. It is one method among several, and we may test
 other approaches later to compare the results.</p>
-<p>kNN fills each missing price using the most similar listings, judged
-on room type, location, minimum nights and how many listings the host
-runs. Month is included so same-month listings are preferred as
-neighbours. Because December to February contain no prices at all,
-values for those months are drawn from listings in other months.</p>
+<p>As with price in the listings data, we impute using kNN: for each row
+missing “Number Of Beds”, we find the most similar rows on dwelling
+type, location, bond counts, and rent statistics, and take their bed
+count. A house with similar rent and bond activity in the same area is a
+reasonable proxy for bedroom count.</p>
 <pre class="r"><code>set.seed(random_seed)
 
-# prices above price_max are errors, so they are filled like missing prices
-airbnb &lt;- airbnb %&gt;%
-  mutate(price_imputed = ifelse(price &gt; price_max, NA, price))
+bonds &lt;- kNN(
+  bonds,
+  variable = &quot;Number Of Beds&quot;,
+  dist_var = c(&quot;Dwelling Type&quot;, &quot;Location Id&quot;, &quot;Total Bonds&quot;, &quot;Active Bonds&quot;,
+               &quot;Closed Bonds&quot;, &quot;Median Rent&quot;, &quot;Geometric Mean Rent&quot;,
+               &quot;Upper Quartile Rent&quot;, &quot;Lower Quartile Rent&quot;),
+  k = knn_k,
+  imp_var = TRUE
+)
 
-airbnb &lt;- kNN(airbnb,
-              variable = &quot;price_imputed&quot;,
-              dist_var = c(&quot;room_type&quot;, &quot;latitude&quot;, &quot;longitude&quot;,
-                           &quot;minimum_nights_filled&quot;,
-                           &quot;calculated_host_listings_count&quot;, &quot;month_year&quot;),
-              k = knn_k, imp_var = FALSE)
+bonds &lt;- bonds %&gt;% rename(beds_was_imputed = `Number Of Beds_imp`)
 
-airbnb &lt;- airbnb %&gt;%
-  mutate(price_was_imputed = is.na(price) | price &gt; price_max)
-
-sum(airbnb$price_was_imputed)</code></pre>
-<pre><code>## [1] 11354</code></pre>
-<pre class="r"><code>if (anyNA(airbnb$price_imputed)) stop(&quot;Some prices are still missing after kNN&quot;)</code></pre>
-<p>The original <code>price</code> column is kept unchanged,
-<code>price_imputed</code> holds the filled version, and
-<code>price_was_imputed</code> marks which rows differ.</p>
-<pre class="r"><code>airbnb %&gt;%
-  group_by(month_year) %&gt;%
-  summarise(rows = n(),
-            observed = sum(!is.na(price)),
-            imputed  = sum(price_was_imputed),
-            median_price = round(median(price_imputed), 0))</code></pre>
-<pre><code>## # A tibble: 11 × 5
-##    month_year     rows observed imputed median_price
-##    &lt;ord&gt;         &lt;int&gt;    &lt;int&gt;   &lt;int&gt;        &lt;dbl&gt;
-##  1 October 2025   2991     2821     177          153
-##  2 November 2025  3047     2835     219          164
-##  3 December 2025  3180        0    3180          167
-##  4 January 2026   3057        0    3057          203
-##  5 February 2026  3190        0    3190          244
-##  6 March 2026     3227     3059     172          238
-##  7 April 2026     3273     3069     207          229
-##  8 May 2026       3361     3149     216          215
-##  9 June 2026      3469     3195     276          214
-## 10 July 2026      3488     3173     319          227
-## 11 August 2026    3513     3177     341          224</code></pre>
+sum(bonds$beds_was_imputed)</code></pre>
+<pre><code>## [1] 858</code></pre>
+<pre class="r"><code>sum(is.na(bonds$`Number Of Beds`))</code></pre>
+<pre><code>## [1] 0</code></pre>
+<p>The original data had no separate “unimputed” copy of this column to
+preserve (unlike price, which stayed at 0% missing in some months and
+scattered elsewhere) – every row now has a value, and
+<code>beds_was_imputed</code> marks which ones were filled in.</p>
 </div>
-</div>
-<div id="panel-structure-and-remaining-flags" class="section level1">
-<h1>9. Panel structure and remaining flags</h1>
-<pre class="r"><code>airbnb &lt;- airbnb %&gt;%
-  group_by(id) %&gt;%
-  mutate(months_present = n_distinct(month_year)) %&gt;%
-  ungroup() %&gt;%
-  mutate(in_all_months = months_present == length(month_levels),
-         long_stay = minimum_nights_filled &gt;= long_stay_nights,
-         name = trimws(name))
-
-table(airbnb$months_present)</code></pre>
-<pre><code>## 
-##     1     2     3     4     5     6     7     8     9    10    11 
-##   208   328   666   876  1080  1380  1218  1512  1593  1800 25135</code></pre>
-<p><strong>Why this matters.</strong> Only 2,338 of 4,117 listings
-appear in all nine snapshots, so an unbalanced panel mixes real price
-movement with listings entering and leaving. Any month-over-month
-comparison should either use <code>in_all_months</code> or state that it
-does not.</p>
-<p><code>long_stay</code> marks the 129 rows requiring 30 or more
-nights. These are a different market to nightly rental and are worth
-excluding from tourist-price analysis.</p>
 </div>
 <div id="validation" class="section level1">
-<h1>10. Validation</h1>
-<pre class="r"><code>if (anyDuplicated(airbnb[, c(&quot;id&quot;, &quot;month_year&quot;)]) &gt; 0) {
-  stop(&quot;A listing appears twice in the same month&quot;)
-}
-range(airbnb$latitude)</code></pre>
-<pre><code>## [1] -43.86751 -43.41634</code></pre>
-<pre class="r"><code>range(airbnb$longitude)</code></pre>
-<pre><code>## [1] 172.4334 173.0970</code></pre>
-<pre class="r"><code>colSums(is.na(airbnb))</code></pre>
-<pre><code>##                             id                           name 
-##                              0                              0 
-##                        host_id                      host_name 
-##                              0                              0 
-##            neighbourhood_group                  neighbourhood 
-##                              0                              0 
-##                       latitude                      longitude 
-##                              0                              0 
-##                      room_type                          price 
-##                              0                          11318 
-##                 minimum_nights              number_of_reviews 
-##                             37                              0 
-##                    last_review              reviews_per_month 
-##                           3234                              0 
-## calculated_host_listings_count               availability_365 
-##                              0                              0 
-##          number_of_reviews_ltm                     month_year 
-##                              0                              0 
-##                     month_date          minimum_nights_filled 
-##                              0                              0 
-##      minimum_nights_was_filled                  price_imputed 
-##                              0                              0 
-##              price_was_imputed                 months_present 
-##                              0                              0 
-##                  in_all_months                      long_stay 
-##                              0                              0</code></pre>
-<p>Coordinates fall between -43.87 and -43.42 latitude and 172.43 to
-173.10 longitude, which is Christchurch City including Banks Peninsula.
-No stray points.</p>
+<h1>7. Validation</h1>
+<pre class="r"><code>sum(duplicated(bonds[, c(&quot;TimeFrame&quot;, &quot;Location Id&quot;, &quot;Dwelling Type&quot;, &quot;Number Of Beds&quot;)]))</code></pre>
+<pre><code>## [1] 779</code></pre>
+<pre class="r"><code>range(bonds$TimeFrame)</code></pre>
+<pre><code>## [1] &quot;2025-10-01&quot; &quot;2026-04-01&quot;</code></pre>
+<pre class="r"><code>length(unique(bonds$`Location Id`))</code></pre>
+<pre><code>## [1] 1818</code></pre>
+<pre class="r"><code>colSums(is.na(bonds))</code></pre>
+<pre><code>##               TimeFrame             Location Id           Dwelling Type 
+##                       0                       0                       0 
+##          Number Of Beds             Total Bonds            Active Bonds 
+##                       0                       0                       0 
+##            Closed Bonds             Median Rent     Geometric Mean Rent 
+##                       0                       0                       0 
+##     Upper Quartile Rent     Lower Quartile Rent Log Std Dev Weekly Rent 
+##                       0                       0                       0 
+##        beds_was_imputed 
+##                       0</code></pre>
+<p>No duplicate rows on the natural key, “TimeFrame” falls entirely
+within the three target quarters, and no missing values remain in any
+column.</p>
 </div>
 <div id="known-limitations" class="section level1">
-<h1>11. Known limitations</h1>
+<h1>8. Known limitations</h1>
 <ol style="list-style-type: decimal">
-<li>December 2025 to February 2026 contain no observed prices, so those
-values are the least reliable in the dataset.</li>
-<li>kNN was chosen as a first approach. Other imputation methods have
-not been tested yet and may give different results.</li>
-<li>Imputation uncertainty is not carried through, so standard errors
-computed on <code>price_imputed</code> will be slightly too small.</li>
+<li><p>“Location Id” is an SA2 area code, not a geographic coordinate or
+a name. There is no location-name lookup in this file, so it cannot yet
+be filtered to Christchurch-only rows or joined to the listings data by
+name. A separate SA2-to-district lookup (e.g. from Stats NZ) will be
+needed before next week’s merge.</p></li>
+<li><p>The kNN distance calculation treats <code>Location Id</code> as a
+categorical match (same area vs. different area), not as spatial
+distance – different SA2 codes are not numerically “close” to each other
+in any meaningful sense, so cross-location neighbour matching leans more
+on dwelling type and bond/rent figures than true geographic
+proximity.</p></li>
+<li><p>Bond data is quarterly while listings are monthly, so any merge
+will necessarily compare a single quarterly figure against up to three
+monthly listings figures.</p></li>
 </ol>
 </div>
 <div id="save" class="section level1">
-<h1>12. Save</h1>
-<pre class="r"><code>airbnb &lt;- airbnb %&gt;% arrange(month_date, id)
-write_csv(airbnb, out_file)
+<h1>9. Save</h1>
+<pre class="r"><code>bonds &lt;- bonds %&gt;% arrange(TimeFrame, `Location Id`)
+write_csv(bonds, out_file)
 
 out_file</code></pre>
-<pre><code>## [1] &quot;./output/Christchurch_cleaned.csv&quot;</code></pre>
-<pre class="r"><code>nrow(airbnb)</code></pre>
-<pre><code>## [1] 35796</code></pre>
+<pre><code>## [1] &quot;./output/Bond_Data_Quarterly_(cleaned).csv&quot;</code></pre>
+<pre class="r"><code>nrow(bonds)</code></pre>
+<pre><code>## [1] 26991</code></pre>
 </div>
 
 

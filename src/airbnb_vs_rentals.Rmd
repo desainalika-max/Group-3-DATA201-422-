@@ -1,14 +1,17 @@
 ---
 title: "Airbnb vs Long-Term Rentals in Christchurch"
-subtitle: "Deliverable 5 questions, October 2025 - June 2026"
+subtitle: "Deliverable 5 questions, every month from October 2025"
 output: html_document
 ---
 
-Reads `Christchurch_with_bonds.csv` and answers the three Deliverable 5 questions.
-Knit `join_listings_bonds.Rmd` first, because it makes that file.
+Reads `output/Christchurch_with_bonds.csv` and answers the three Deliverable 5 questions.
+Knit `join_listings_bonds.Rmd` first, because it makes that file (or run `make`, which
+runs every step in order).
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+# this file is in src/, so run its code from the repo folder (one level up)
+knitr::opts_knit$set(root.dir = "..")
 library(dplyr)
 library(readr)
 ```
@@ -22,7 +25,7 @@ days_per_week  <- 7                       # rents are weekly, Airbnb prices are 
 
 ```{r}
 # made by join_listings_bonds.Rmd, so knit that first
-joined <- read_csv("Christchurch_with_bonds.csv",
+joined <- read_csv("output/Christchurch_with_bonds.csv",
                    col_types = cols(id = col_character(),
                                     host_id = col_character(),
                                     area_code = col_character(),
@@ -62,20 +65,26 @@ per_listing <- observed %>%
 median(per_listing$price)
 
 # for comparison: all of Christchurch
-median(joined$price[joined$price_was_imputed == FALSE])
+all_christchurch <- median(joined$price[joined$price_was_imputed == FALSE])
+all_christchurch
+
+# the numbers for the result below
+central_median <- median(observed$price)
+difference     <- central_median - all_christchurch
 ```
 
-## Result: $238 per night
+## Result: $`r round(central_median)` per night
 
 | Median price per night | |
 |---|---|
-| Christchurch Central (326600) | **$238** |
-| All of Christchurch | $205 |
-| Central costs more by | $33 (16%) |
+| Christchurch Central (326600) | **$`r round(central_median)`** |
+| All of Christchurch | $`r round(all_christchurch)` |
+| Central costs more by | $`r round(difference)` (`r round(100 * difference / all_christchurch)`%) |
 
-- Based on 705 real prices from 150 listings.
-- Left out: December to February (no prices) and 8 prices over $2,000.
-- Counting other ways gives $236 and $237, so the answer is stable.
+- Based on `r nrow(observed)` real prices from `r n_distinct(observed$id)` listings.
+- Left out: December to February (no prices) and `r sum(central$price > 2000, na.rm = TRUE)` prices over $2,000.
+- Counting other ways gives $`r round(median(central$price_imputed))` and $`r round(median(per_listing$price))`, so the answer is stable.
+- `r sum(is.na(joined$area_code))` listing rows in new months have no area code yet, so they are not counted here.
 
 # 2. Largest gap between short- and long-term rental prices
 
@@ -136,6 +145,8 @@ gaps %>%
   ($164) with 214 listings, and holds the widest area, so we name Heathcote.
 - Compares entire homes only, using real prices and nightly stays. An area needs
   20+ listings to be ranked.
+- Only months with bond data are used (up to the quarter starting
+  `r max(joined$quarter[joined$has_bond_data])`), so the newest months are not in this yet.
 
 # 3. Number of Airbnbs vs rental properties
 
@@ -186,3 +197,54 @@ April to June 2026:
 - Airbnbs cluster in the centre. Every ward outside Central has 2 to 9 per 100.
 - Only two areas have more Airbnbs than rentals: 326600 and 327100 (293 vs 276).
 - Counts distinct listings in the quarter against active bonds.
+
+# 4. Prices by month
+
+Added in Deliverable 7, so the new months show up in a plot. Questions 2 and 3 need bond
+data, which comes out a few months late, so they only change once Tenancy Services
+publishes the next quarter.
+
+```{r}
+# median real price per month: all of Christchurch and Christchurch Central
+by_month <- joined %>%
+  group_by(month_date) %>%
+  summarise(listings = n_distinct(id),
+            all_christchurch = median(price[price_was_imputed == FALSE]),
+            central = median(price[price_was_imputed == FALSE & area_code %in% central_area]))
+
+by_month
+```
+
+```{r, fig.width = 9, fig.height = 5.5}
+# the first and last month in the data, for the title
+first_month <- format(min(by_month$month_date), "%B %Y")
+last_month  <- format(max(by_month$month_date), "%B %Y")
+
+# December to February have no real prices, so the lines have a gap there
+plot(by_month$month_date, by_month$central, type = "b", pch = 17, col = "#eb6834",
+     ylim = range(c(by_month$central, by_month$all_christchurch), na.rm = TRUE) + c(-10, 10),
+     xaxt = "n", xlab = "", ylab = "Median price ($ per night)",
+     main = paste("Median real Airbnb price per night,", first_month, "to", last_month))
+lines(by_month$month_date, by_month$all_christchurch, type = "b", pch = 16, col = "#2a78d6")
+
+# a label for every month in the data, so a new month gets its own label
+axis(1, at = by_month$month_date, labels = format(by_month$month_date, "%b\n%Y"),
+     padj = 0.5, cex.axis = 0.8)
+
+# explain the gap, for the months with no real prices
+no_prices <- by_month$month_date[is.na(by_month$all_christchurch)]
+if (length(no_prices) > 0) {
+  text(mean(no_prices), mean(range(by_month$all_christchurch, na.rm = TRUE)),
+       "no real prices\nin these months", col = "grey40", cex = 0.9)
+}
+
+# write the prices of the newest month next to its points
+last <- nrow(by_month)
+text(by_month$month_date[last], by_month$central[last],
+     paste0("$", round(by_month$central[last])), pos = 3, col = "#eb6834", cex = 0.9)
+text(by_month$month_date[last], by_month$all_christchurch[last],
+     paste0("$", round(by_month$all_christchurch[last])), pos = 1, col = "#2a78d6", cex = 0.9)
+
+legend("topleft", legend = c("Christchurch Central (326600)", "All of Christchurch"),
+       col = c("#eb6834", "#2a78d6"), pch = c(17, 16), lty = 1, bty = "n")
+```

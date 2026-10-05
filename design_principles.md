@@ -22,6 +22,8 @@ External services: Koordinates vector query API, layer `123515` (SA2 2026 codes)
 
 Raw source files are expected to sit in the **same folder as the scripts**. There is no `data/` subdirectory.
 
+*Deliverable 7 update:* the code is now in `src/`, the downloaded files in `data/` and everything the code makes in `output/`. The scripts keep their names and are still run from the project root (see `Deliverable7_changes.md`).
+
 ---
 
 ## 2. Outputs
