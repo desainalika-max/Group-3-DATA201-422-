@@ -111,42 +111,58 @@ boxplot(gap ~ reorder(neighbourhood, gap, median), data = gaps,
         xlab = "Airbnb price minus long-term rent ($ per night)")
 ```
 
-```{r}
-# median gap per ward
-gaps %>%
+```{r gap_rankings}
+# Median gap for each ward.
+ward_gaps <- gaps %>%
   group_by(neighbourhood) %>%
-  summarise(listings = n_distinct(id), median_gap = median(gap)) %>%
+  summarise(
+    listings = n_distinct(id),
+    median_gap = median(gap),
+    .groups = "drop"
+  ) %>%
   arrange(desc(median_gap))
 
-# median gap per location id, areas with at least 20 listings
-gaps %>%
-  group_by(area_code) %>%
-  summarise(ward = first(neighbourhood),
-            listings = n_distinct(id),
-            airbnb_price = median(price),
-            long_term_per_night = round(median(long_term_per_night)),
-            median_gap = median(gap)) %>%
-  filter(listings >= min_listings) %>%
-  arrange(desc(median_gap)) %>%
-  head(5)
+ward_gaps
 
+# Rank areas with enough distinct listings.
+area_gaps <- gaps %>%
+  group_by(area_code) %>%
+  summarise(
+    ward = first(neighbourhood),
+    listings = n_distinct(id),
+    airbnb_price = median(price),
+    long_term_per_night = median(long_term_per_night),
+    median_gap = median(gap),
+    .groups = "drop"
+  ) %>%
+  filter(listings >= min_listings, is.finite(median_gap)) %>%
+  arrange(desc(median_gap), area_code)
+
+head(area_gaps, 5)
+
+if (nrow(area_gaps) == 0) {
+  stop("No areas have enough listings and a valid median gap.")
+}
+
+top_area <- slice_head(area_gaps, n = 1)
+city_median_gap <- median(gaps$gap)
+latest_bond_quarter <- max(gaps$quarter)
 ```
 
-## Result: Heathcote Ward, location 332700
+## Result: Area `r top_area$area_code`, associated ward: `r top_area$ward`
 
-| A whole home in 332700 | Per night |
+| Entire homes in area `r top_area$area_code` | Per night |
 |---|---|
-| Airbnb | $344 |
-| Long-term rent | $89 |
-| **Gap** | **$255** |
+| Median Airbnb price | $`r round(top_area$airbnb_price)` |
+| Median daily equivalent of long-term rent | $`r round(top_area$long_term_per_night)` |
+| **Median listing-level gap** | **$`r round(top_area$median_gap)`** |
 
-- Christchurch median gap: $144 a night.
-- By ward: Halswell is highest ($186) but has only 52 listings. Heathcote is next
-  ($164) with 214 listings, and holds the widest area, so we name Heathcote.
-- Compares entire homes only, using real prices and nightly stays. An area needs
-  20+ listings to be ranked.
-- Only months with bond data are used (up to the quarter starting
-  `r max(joined$quarter[joined$has_bond_data])`), so the newest months are not in this yet.
+- Christchurch's median listing-level gap is $`r round(city_median_gap)` per night.
+- The highest-ranked area contains `r top_area$listings` distinct Airbnb listings.
+- Areas need at least `r min_listings` distinct listings to enter the ranking.
+- The comparison uses entire homes, observed prices, nightly stays and available bond data.
+- The latest included bond quarter starts on `r format(latest_bond_quarter, "%d %B %Y")`.
+- The median gap is calculated from individual listing-level gaps. It does not necessarily equal the difference between the two displayed medians.
 
 # 3. Number of Airbnbs vs rental properties
 
