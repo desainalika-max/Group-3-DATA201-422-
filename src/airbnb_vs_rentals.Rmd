@@ -193,15 +193,55 @@ latest_bond_quarter <- max(gaps$quarter)
 
 # 3. Number of Airbnbs vs rental properties
 
-```{r}
-# latest quarter (Apr-Jun 2026): Airbnb listings vs active bonds in each area
-counts <- joined %>%
-  filter(quarter == latest_quarter, has_bond_data == TRUE) %>%
+```{r rental_counts}
+# Select the comparison quarter and areas with bond data.
+quarter_data <- joined %>%
+  filter(
+    quarter == latest_quarter,
+    has_bond_data == TRUE
+  )
+
+if (nrow(quarter_data) == 0) {
+  stop("No rows with bond data are available for the selected quarter.")
+}
+
+# Check area codes and rental counts before dividing.
+invalid_rentals <- quarter_data %>%
+  filter(
+    is.na(area_code) |
+    is.na(bond_active) |
+    !is.finite(bond_active) |
+    bond_active <= 0
+  )
+
+if (nrow(invalid_rentals) > 0) {
+  stop("Missing area codes or invalid rental counts. Check the joined data.")
+}
+
+# Each area needs one consistent rental count for this quarter.
+rental_consistency <- quarter_data %>%
   group_by(area_code) %>%
-  summarise(ward = first(neighbourhood),
-            airbnbs = n_distinct(id),
-            rentals = first(bond_active)) %>%
-  mutate(airbnbs_per_100_rentals = round(100 * airbnbs / rentals))
+  summarise(
+    rental_values = n_distinct(bond_active),
+    .groups = "drop"
+  )
+
+if (any(rental_consistency$rental_values != 1)) {
+  stop("An area has conflicting rental counts within the selected quarter.")
+}
+
+# Calculate ratios after the checks pass.
+counts <- quarter_data %>%
+  group_by(area_code) %>%
+  summarise(
+    ward = first(neighbourhood),
+    airbnbs = n_distinct(id),
+    rentals = first(bond_active),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    airbnbs_per_100_rentals = round(100 * airbnbs / rentals)
+  )
 
 sum(counts$airbnbs)
 sum(counts$rentals)
