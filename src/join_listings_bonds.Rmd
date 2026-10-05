@@ -1,26 +1,31 @@
 ---
 title: "Joining the Airbnb Listings to the Bond Data"
-subtitle: "Christchurch, October 2025 - June 2026, joined on area code and quarter"
+subtitle: "Christchurch, every month from October 2025, joined on area code and quarter"
 output: html_document
 ---
 
-Reads `Christchurch_with_area_codes.csv` and `Bond_Data_Quarterly_(cleaned).csv`, joins
-them on area code and quarter, and saves `Christchurch_with_bonds.csv`.
+Reads `output/Christchurch_cleaned.csv`, the area codes in `data/Christchurch_with_area_codes.csv`
+and `output/Bond_Data_Quarterly_(cleaned).csv`, joins them on area code and quarter, and saves
+`output/Christchurch_with_bonds.csv`.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-# install once if needed: install.packages(c("dplyr", "readr"))
+# this file is in src/, so run its code from the repo folder (one level up)
+knitr::opts_knit$set(root.dir = "..")
+# install once if needed: install.packages(c("dplyr", "readr", "lubridate"))
 library(dplyr)
 library(readr)
+library(lubridate)
 ```
 
-# 1. Read the two files
+# 1. Read the files
 
 ```{r settings}
-listings_file  <- "Christchurch_with_area_codes.csv"
-bonds_file     <- "Bond_Data_Quarterly_(cleaned).csv"
-raw_bonds_file <- "Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv"   # only used for the sanity check
-out_file       <- "Christchurch_with_bonds.csv"
+listings_file   <- "output/Christchurch_cleaned.csv"
+area_codes_file <- "data/Christchurch_with_area_codes.csv"   # made by get_area_codes.py
+bonds_file      <- "output/Bond_Data_Quarterly_(cleaned).csv"
+raw_bonds_file  <- "data/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv"   # only used for the sanity check
+out_file        <- "output/Christchurch_with_bonds.csv"
 ```
 
 ```{r}
@@ -29,7 +34,6 @@ out_file       <- "Christchurch_with_bonds.csv"
 listings <- read_csv(listings_file,
                      col_types = cols(id = col_character(),
                                       host_id = col_character(),
-                                      area_code = col_character(),
                                       .default = col_guess()))
 
 bonds <- read_csv(bonds_file,
@@ -41,6 +45,37 @@ dim(listings)
 dim(bonds)
 ```
 
+`get_area_codes.py` needs an API key, so it cannot be rerun on every computer. Instead of
+reading its output as the listings, we only take the area code of each coordinate from it.
+That way the newest cleaned listings, including new months, still get their area codes.
+Listings at a coordinate it has never seen get no area code until `get_area_codes.py` is
+run again.
+
+```{r area-codes}
+# coordinates are rounded to 7 decimal places (about 1 cm) before matching, because a few
+# have extra digits that changed in the last place when get_area_codes.py saved them
+area_codes <- read_csv(area_codes_file,
+                       col_types = cols(area_code = col_character(),
+                                        .default = col_guess())) %>%
+  transmute(latitude_rounded = round(latitude, 7),
+            longitude_rounded = round(longitude, 7),
+            area_code) %>%
+  distinct()
+
+if (anyDuplicated(area_codes[, c("latitude_rounded", "longitude_rounded")]) > 0) {
+  stop("A coordinate has two area codes")
+}
+
+listings <- listings %>%
+  mutate(latitude_rounded = round(latitude, 7),
+         longitude_rounded = round(longitude, 7)) %>%
+  left_join(area_codes, by = c("latitude_rounded", "longitude_rounded")) %>%
+  select(-latitude_rounded, -longitude_rounded)
+
+# listing rows with no area code yet (new coordinates)
+sum(is.na(listings$area_code))
+```
+
 # 2. Give every listing its quarter
 
 Listings are monthly and bonds are quarterly, so each month gets the first day of its
@@ -48,11 +83,7 @@ quarter, which is what the bond `TimeFrame` holds.
 
 ```{r}
 listings <- listings %>%
-  mutate(quarter = case_when(
-    month_year %in% c("October 2025", "November 2025", "December 2025") ~ as.Date("2025-10-01"),
-    month_year %in% c("January 2026", "February 2026", "March 2026")    ~ as.Date("2026-01-01"),
-    month_year %in% c("April 2026", "May 2026", "June 2026")            ~ as.Date("2026-04-01")
-  ))
+  mutate(quarter = floor_date(month_date, "quarter"))
 
 if (anyNA(listings$quarter)) stop("Some months were not given a quarter")
 ```
@@ -141,6 +172,11 @@ dim(joined)
 ```
 
 # Result
+
+In this run, `r format(sum(joined$has_bond_data), big.mark = ",")` of
+`r format(nrow(joined), big.mark = ",")` listing rows matched a bond total. The bond data
+ends at the quarter starting `r max(bond_totals$quarter)`, so listing months after that
+have no bond data yet. The numbers below are for October 2025 to June 2026 (Deliverable 5).
 
 21,946 listing rows (76%) matched a bond total. The other 6,849 are kept with empty
 bond columns, for three reasons:

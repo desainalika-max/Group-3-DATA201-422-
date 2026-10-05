@@ -5,11 +5,13 @@ date: "2026-09-13"
 output: html_document
 ---
 
-Reads `Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv`, cleans it, and saves
-`Bond_Data_Quarterly_(cleaned).csv`.
+Reads `data/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv`, cleans it, and saves
+`output/Bond_Data_Quarterly_(cleaned).csv`.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+# this file is in src/, so run its code from the repo folder (one level up)
+knitr::opts_knit$set(root.dir = "..")
 library(dplyr)
 library(tidyr)
 library(readr)
@@ -21,18 +23,18 @@ library(lubridate)
 
 ```{r settings}
 
-# "." means the folder this Rmd is in (the repo folder), so it works on every computer
+# "." means the repo folder (set in the setup chunk), so it works on every computer
 data_dir <- "."
 
 in_file <- file.path(data_dir, 
-                     "Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv")
+                     "data", "Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv")
 
-listings_file <- file.path(data_dir, 
-                           "Christchurch Oct2025 to Jun2026 (cleaned).csv") 
+listings_file <- file.path(data_dir,
+                           "output", "Christchurch_cleaned.csv")
 #Reads the listings file only to get its date range for filtering months from quarterly
 
 # the same file name that join_listings_bonds.Rmd reads
-out_file <- file.path(data_dir, "Bond_Data_Quarterly_(cleaned).csv")
+out_file <- file.path(data_dir, "output", "Bond_Data_Quarterly_(cleaned).csv")
 
 national_total_id <- "-99"   # the Location Id used for the all-of-New-Zealand total
 knn_k             <- 5       # how many similar rows kNN uses to fill a bed count

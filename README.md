@@ -55,8 +55,8 @@ To calculate how long ago a listing's last review was, we count backwards from t
 ## Cleaning the Airbnb Listings
 
 **Source:** Deliverable 3 concatenated panel, Inside Airbnb, Christchurch, Oct 2025 – Jun 2026
-**Cleaning script:** `clean_christchurch_panel.Rmd`
-**Output:** `Christchurch Oct2025 to Jun2026 (cleaned).csv`
+**Cleaning script:** `src/clean_christchurch_panel.Rmd`
+**Output:** `output/Christchurch_cleaned.csv` (called `Christchurch Oct2025 to Jun2026 (cleaned).csv` before Deliverable 7)
 
 ### Column changes
 
@@ -73,7 +73,7 @@ To calculate how long ago a listing's last review was, we count backwards from t
 | `minimum_nights` | Carried forward within listing as `minimum_nights_filled`; original kept | 37 gaps, each with a value present in an adjacent month for the same listing. Minimum nights is a host-set rule, not a market outcome, and changes rarely. Carrying it forward is safer than imputing. The raw `minimum_nights` column is kept unchanged alongside the filled version. |
 | `price` | Imputed via kNN as `price_imputed`; original kept | See below |
 | `months_present`   | Added | Count of how many of the nine monthly snapshots this listing appears in. |
-| `in_all_9_months`  | Added | TRUE if the listing appears in all nine monthly snapshots. Any month-over-month price comparison should either filter to this or explicitly note that it doesn't, otherwise real price movement gets mixed up with listings simply entering or leaving the panel. |
+| `in_all_months`  | Added | TRUE if the listing appears in every monthly snapshot (called `in_all_9_months` before Deliverable 7). Any month-over-month price comparison should either filter to this or explicitly note that it doesn't, otherwise real price movement gets mixed up with listings simply entering or leaving the panel. |
 | `long_stay` | Added | Flags the 129 rows requiring 30+ nights minimum stay. A different market to nightly tourist rental, worth excluding from tourist-price analysis. |
 | `name` | Whitespace trimmed | Minor cleanup, no rows affected structurally |
 
@@ -93,12 +93,12 @@ The original `price` column is kept unchanged. `price_imputed` holds the filled 
 1. December 2025 – February 2026 have no observed prices, so imputed values in that window are the least reliable in the dataset.
 2. kNN was chosen as a first approach; other imputation methods haven't been tested and may give different results.
 3. Imputation uncertainty isn't carried through, so any standard errors computed on `price_imputed` will be slightly too small.
-4. Only 2,338 of 4,117 listings appear in all nine months, unbalanced panel, see `in_all_9_months`.
+4. Only 2,338 of 4,117 listings appear in all nine months, unbalanced panel, see `in_all_months`.
 
 ### How to use the output
 
 - **Observed prices only:** filter `price_was_imputed == FALSE`
-- **Balanced month-over-month comparisons:** filter `in_all_9_months == TRUE`
+- **Balanced month-over-month comparisons:** filter `in_all_months == TRUE`
 - **Tourist-market pricing:** exclude `long_stay == TRUE`
 
 
@@ -106,8 +106,8 @@ The original `price` column is kept unchanged. `price_imputed` holds the filled 
 
 **Source:** [Tenancy Services | Rental bond data](https://www.tenancy.govt.nz/about-tenancy-services/data-and-statistics/rental-bond-data/), Detailed quarterly report, Jan 2020 – Apr 2026
 **License:** Creative Commons Attribution 3.0 NZ, credited to the Ministry of Business, Innovation and Employment
-**Cleaning script:** `bond_listing_clean.Rmd`
-**Output:** `Bond_Data_Quarterly_(cleaned).csv`
+**Cleaning script:** `src/bond_listing_clean.Rmd`
+**Output:** `output/Bond_Data_Quarterly_(cleaned).csv`
 
 Data comes from Tenancy Services' bond database, covering private-sector bonds lodged each month, listed by tenancy start date, using SA2-2019 area definitions from Statistics NZ. Fixed random rounding to base 3 and suppression of results under 5 bonds is applied by MBIE before release. Recent quarters are provisional due to an ongoing bond-system migration and may not be directly comparable with earlier periods.
 
@@ -152,6 +152,8 @@ Data comes from Tenancy Services' bond database, covering private-sector bonds l
 
 Tasks 1 to 3 are below. Tasks 4 and 5 (the design principles document) are done by Nalika.
 
+The same notes, plus a list of every file we changed, are also in `Deliverable6_changes.md`.
+
 ### What we changed and why (tasks 1 and 2)
 
 We went back through our code using the Week 9 lecture slides on best coding practices. None of these changes affect our answers. They are still $238, $255 and 8 Airbnbs per 100 rentals, the same as Deliverable 5.
@@ -193,7 +195,7 @@ Lecture: "If you have detailed expectations, record them in the code".
 
 - The bond file says it has no duplicate rows, but its own check prints 779. They come from the kNN step that fills missing bed counts. Fixing this would change the data, so we left it for now. It does not affect our answers, because the join only uses area totals that kNN did not fill.
 - The saved bond CSV was made by an older version of `bond_listing_clean.Rmd`, so it is not exactly what the code makes now. We did not re-run it, so the data stays the same as Deliverable 5.
-- Separate folders for data, code and outputs. The lecture suggests this, but moving files now would break everyone's file paths.
+- Separate folders for data, code and outputs. The lecture suggests this, but moving files now would break everyone's file paths. We did this in Deliverable 7 (see "Folder structure" in the Deliverable 7 section).
 - File names with spaces, like `Christchurch Oct2025 to Jun2026 (cleaned).csv`, for the same reason.
 
 ### Sanity check example (task 3)
@@ -205,3 +207,109 @@ Lecture: "Calculate the expected result by hand, for one or more rows. Compare w
 - How we checked it: we took one Christchurch Central (326600) listing in April 2026. April is in the quarter that starts on 2026-04-01, so the listing should get the 326600 total for that quarter. We looked that row up ourselves in the raw bond report (`Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv`), not in our cleaned file, and compared the two.
 - Result: both show 42 active bonds and a weekly rent of $537, so the join matched the right area and the right quarter.
 - This check is now in section 5 of `join_listings_bonds.Rmd`. If the numbers ever stop matching, the knit stops with an error.
+
+
+## Deliverable 7
+
+Task: automate the pipeline so that new months of Inside Airbnb data can be added with one
+command, then add July and August 2026 and update the analyses and plots.
+
+What we did:
+
+- `combine_months.Rmd` is new. It uses a loop to combine every monthly file in
+  `data/listings/` (it replaces `Filter CHC.R` and `Combine CHC.R` from Deliverable 3).
+- A `Makefile` runs every step in order with one command, `make`. `run_all.R` does the same
+  for anyone without make. The steps, in order:
+  1. `combine_months.Rmd`: combines the monthly files and keeps Christchurch
+  2. `clean_christchurch_panel.Rmd`: cleans the listings
+  3. `bond_listing_clean.Rmd`: cleans the bond data
+  4. `join_listings_bonds.Rmd`: joins the listings to the bond data
+  5. `airbnb_vs_rentals.Rmd`: answers the questions and makes the plots
+
+  `get_area_codes.py` is run by hand, because it needs the API key.
+- The month lists written into the Rmds were replaced by code that reads the months from
+  the data, so a new month needs no code changes.
+- The code is now in `src/`, the downloaded data in `data/`, and everything the code makes
+  in `output/`.
+- We added July and August 2026, and a new plot of the median price by month.
+
+Results: the median price in Christchurch Central is now $244 a night (was $238). The other
+two answers ($255 gap in area 332700, and 8 Airbnbs per 100 rentals) have not changed,
+because there is no bond data after June 2026 yet.
+
+To run everything: `make`. To add a month: save its `listings.csv` in `data/listings/`,
+named by its scrape date (for example `2026-08-13.csv`), then run `make`.
+
+### Folder structure
+
+Lecture: "Clean separation of parts: Data, Code, Output" and "Do not edit Data".
+
+In Deliverable 6 every file sat in one folder, so the raw data, the code and the files the
+code makes were all mixed together. In Deliverable 7 we split them up, following the
+lecture's default project structure and the plan we wrote in Deliverable 6:
+
+```
+Github/
+  README.md
+  Deliverable6_changes.md
+  Deliverable7_changes.md
+  design_principles.md
+  teamrules
+  .gitignore
+  Makefile
+  run_all.R
+
+  data/
+    listings/
+      2025-10-05.csv ... 2026-08-13.csv   (one Inside Airbnb file per month)
+    Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv
+    Christchurch_with_area_codes.csv
+
+  src/
+    combine_months.Rmd
+    clean_christchurch_panel.Rmd
+    get_area_codes.py                     (run by hand, needs the API key)
+    bond_listing_clean.Rmd
+    join_listings_bonds.Rmd
+    airbnb_vs_rentals.Rmd
+
+  output/
+    Christchurch_combined.csv
+    Christchurch_cleaned.csv
+    Bond_Data_Quarterly_(cleaned).csv
+    Christchurch_with_bonds.csv
+    combine_months.html
+    clean_christchurch_panel.html
+    bond_listing_clean.html
+    join_listings_bonds.html
+    airbnb_vs_rentals.html
+```
+
+What each folder is for:
+
+- `data/` holds the files we downloaded. We never edit them by hand. Every change is made by
+  the code, so anyone can see exactly what was done to the original data.
+  `Christchurch_with_area_codes.csv` is here too, because it comes from the Koordinates API
+  and needs an API key to make again.
+- `src/` holds the code, listed above in the order it runs.
+- `output/` holds everything the code makes: the combined, cleaned and joined files and the
+  HTML reports. All of it can be made again by running `make`
+- The top folder holds the documents, and `Makefile` and `run_all.R`, which run all the
+  code. The lecture says the file that runs everything belongs in the project root.
+- The lecture says outputs usually do not go in git. We still keep `output/` in git, because
+  teammates use these files without running the code.
+
+What is different from the plan in Deliverable 6:
+
+- The files kept their names, with no numbers in front, so they still match our design
+  principles. The run order is set by `Makefile` and `run_all.R` instead.
+- The output folder is called `output/`, not `out/`.
+- `Christchurch_with_area_codes.csv` is in `data/`, not `out/`, because it cannot be made
+  again without the API key.
+- The combined listings file is now made by `combine_months.Rmd` from the monthly files in
+  `data/listings/`, so it is in `output/`, not `data/`.
+- Each Rmd has one new setup line so its code still runs from the repo folder. Apart from
+  adding the folder names, no file paths in the code changed.
+
+All the details (every code change and why, where we used the Week 10 lecture, and what we
+checked) are in `Deliverable7_changes.md`.

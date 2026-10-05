@@ -6,3 +6,5 @@
 .env
 venv39/
 .venv/
+# reports made by clicking Knit (make and run_all.R put them in output/)
+src/*.html
