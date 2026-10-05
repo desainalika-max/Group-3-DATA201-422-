@@ -361,3 +361,25 @@ text(by_month$month_date[last], by_month$all_christchurch[last],
 legend("topleft", legend = c("Christchurch Central (326600)", "All of Christchurch"),
        col = c("#eb6834", "#2a78d6"), pch = c(17, 16), lty = 1, bty = "n")
 ```
+
+# Interpretation and limitations
+
+Airbnb prices are advertised nightly prices, not confirmed booking revenue.
+We divide weekly long-term rent by seven to express both prices on a daily
+basis. However, the rental types differ in tenancy conditions, included
+services and additional charges. The price gap should not be interpreted
+as a difference in profit.
+
+Active rental bonds are used as a proxy for long-term rental properties.
+Airbnb counts represent distinct listing IDs observed during the selected
+quarter. They do not show how many properties were available on one
+specific day. These counts therefore measure different things.
+
+The observed-price analysis excludes imputed prices. Months without
+observed prices do not contribute to these estimates. In the pooled
+analysis, listings with prices recorded in more months contribute more
+observations.
+
+Each comparison includes only records with the area codes and bond data
+needed for that question. The results describe the included records.
+They do not establish that Airbnb causes changes in long-term rents.
