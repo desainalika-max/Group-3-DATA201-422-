@@ -31,6 +31,33 @@ joined <- read_csv("output/Christchurch_with_bonds.csv",
                                     area_code = col_character(),
                                     .default = col_guess()))
 
+# Check that the input contains every column this report needs.
+required_columns <- c(
+  "id",
+  "month_year",
+  "month_date",
+  "area_code",
+  "neighbourhood",
+  "price",
+  "price_imputed",
+  "price_was_imputed",
+  "room_type",
+  "long_stay",
+  "has_bond_data",
+  "median_rent_weekly",
+  "quarter",
+  "bond_active"
+)
+
+missing_columns <- setdiff(required_columns, names(joined))
+
+if (length(missing_columns) > 0) {
+  stop(
+    "The input CSV is missing required columns: ",
+    paste(missing_columns, collapse = ", ")
+  )
+}
+
 if (anyDuplicated(joined[, c("id", "month_year")]) > 0) {
   stop("A listing appears twice in the same month")
 }
