@@ -1,52 +1,158 @@
 # Deliverable 6: what we changed and why
 
-For Deliverable 6 we went back through our code using the ideas from the Week 9 lectures: relative file paths, putting settings at the top of each file, checks that stop the code, and sanity checking one row by hand. Below is what we changed and why.
+For Deliverable 6 we went back through our code using the Week 9 lecture slides on best coding practices. This file covers tasks 1, 2 and 3. Tasks 4 and 5 (the design principles document) are done by Nalika.
 
-Where to find each part of Deliverable 6:
+None of these changes affect our answers. They are still the same as Deliverable 5:
 
-- Task 1 (revisit the code): the Rmd files and `get_area_codes.py`
-- Task 2 (notes on what we changed): this file (the same notes are also at the end of the README)
-- Task 3 (sanity check example): the "Sanity Check Example" section of the README
-- Task 4 (design principles document): `design_principles.md`
-- Task 5 (checking the document against the code): section 6 of `design_principles.md`
+- Median Airbnb price in Christchurch Central: $238 a night
+- Biggest gap between Airbnb and long-term rent: area 332700 in Heathcote, $255 a night
+- Airbnbs per 100 long-term rentals: 8
 
-## How the answers changed
+No data files were changed. Only the code, the HTML reports and the README.
 
-- The median Airbnb price in Christchurch Central went from $238 to $236 a night.
-- The median Airbnb price for all of Christchurch went from $205 to $211 a night.
-- The area with the largest gap is still 332700 in Heathcote, but the gap went from $255 to $259 a night.
-- Airbnbs per 100 long-term rentals went from 8 to 7.
-- None of our conclusions changed. The numbers moved a little because of the data fixes in part 5.
 
-## 1. Relative file paths
+## What we changed and why
 
-- `bond_listing_clean.Rmd` used a folder on Nalika's laptop (`/Users/nalikadesai/Desktop/DATA201`), so it only ran on her computer. We changed it to the repo folder so it runs for anyone. This is the lecture's rule about never using absolute paths.
-- The same file saved its output as `Bond Data Quarterly (cleaned).csv`, but the join reads `Bond_Data_Quarterly_(cleaned).csv`. Rerunning it never updated the file the join used, so we made the names match.
+### 1. Relative file paths
 
-## 2. Settings at the top of each file
+Lecture: "Always use relative file paths".
 
-- Each file now starts with a line or two saying what it reads and what it writes, like the file headers in the lecture.
-- Numbers that control the code are now named once at the top, instead of being typed in the middle of the code. For example `price_max <- 2000`, `knn_k <- 10`, `long_stay_nights <- 30`, `days_per_week <- 7` and `N_PROCESSES = 20`. The lecture calls these magic numbers. A name says what the number means, and if we want to change it there is only one place to do it.
+- `bond_listing_clean.Rmd` used a folder on Nalika's laptop (`/Users/nalikadesai/Desktop/DATA201`), so it only worked on her computer. It now uses the repo folder, so it works for everyone.
+- It also saved its output under a different name (`Bond Data Quarterly (cleaned).csv`) from the one the join reads (`Bond_Data_Quarterly_(cleaned).csv`). The names now match.
 
-## 3. Checks that stop the code
+### 2. Settings at the top of each file
 
-- Many checks used to print a number with a comment like `# expect 0` and then carry on, even when the number was wrong. We changed them to `if (...) stop("...")`, the same pattern as the lecture's assertions slide. Now the knit stops with a clear message if a file is missing, a listing appears twice, or a join adds rows.
-- `get_area_codes.py` used to turn a failed lookup into a blank area code without saying anything. It now saves its file and then stops with an error if any listing has no area code.
-- The bond `Location Id` is now read as text. When it was read as a number, area 200000 was saved as `2e+05`. Area codes are labels, not numbers, which is the same lesson as the listing `id` in Deliverable 4.
+Lecture: "Draw attention to parameters" and "no magic numbers".
 
-## 4. Sanity checks on one row
+- Numbers that control the code used to be hidden in the middle of it, like 2000, 10 and 30. They now have names at the top of each file, for example `price_max <- 2000` and `knn_k <- 10`.
+- The name says what the number means, and there is only one place to change it.
 
-Nalika's sanity check example tests the geocoding step with one known Redcliffs listing. We built on that idea:
+### 3. File headers
 
-- The Redcliffs check now runs inside `get_area_codes.py` every time. If Redcliffs does not come back as 332100 the script stops, so a swapped latitude and longitude cannot slip through.
-- `clean_christchurch_panel.Rmd` checks one filled price by hand. One townhouse has real prices of 450, 450, 490, 614, 615 and 741, so its median is (490 + 614) / 2 = $552, and the code has to give exactly that.
-- `join_listings_bonds.Rmd` checks one Central listing from April 2026 against the raw bond report. Both should show 42 active bonds and a weekly rent of $537.
+Lecture: "File headers".
 
-## 5. Data problems we found while checking
+- Each file now starts with a line or two saying which file it reads and which file it saves. Reading the tops of the files is enough to see how they connect.
 
-- Filled prices. kNN filled missing prices by copying from similar listings, but it cannot tell apart listings from the same host at the same address. One host's 7 listings, from 2 bedroom flats to a 4 bedroom townhouse, all got $213 for December. This happened to 564 prices. Now a missing price is filled with that listing's own median price first, and kNN is only used for listings that never show a price.
-- Counting each listing once. A listing seen in six months used to count six times in the median. Now each listing gets one price, its own median, before we take the median across listings. Central went from $238 to $236, and leaving out the host with 7 listings does not change it.
-- Question 3. Active bonds count the rentals at one point in time, so we now count the Airbnbs listed in June 2026, instead of every Airbnb seen at any point from April to June. This moved the answer from 8 to 7 per 100 rentals.
-- Bed counts in the bond data. A blank bed count means the number of bedrooms was not recorded. kNN gave these rows bed counts the area already had, which made 779 duplicate rows, even though the notebook said there were no duplicates. They are now labelled "Not recorded", and a check stops the run if a duplicate ever appears.
-- Typed numbers. Numbers in the result text are now printed by the code instead of typed by hand. This showed that one hand-typed count, in the table of why some listings have no bond data, was wrong (522 instead of 61).
+### 4. Checks that stop the code
 
+Lecture: "Assertions as documentation".
+
+- Some checks printed a number with a comment like `# expect 0`, and the code carried on even when the number was wrong. They now use `if (...) stop("...")`, so the code stops with a message when something is wrong.
+- `get_area_codes.py` now stops with an error if a listing did not get an area code, instead of leaving it blank without saying anything.
+
+### 5. Say what type each column is
+
+Lecture: "If you have detailed expectations, record them in the code".
+
+- The bond file now reads `Location Id` as text, because it is an area code, not a number. Read as a number, area 200000 was saved as `2e+05`.
+
+
+## Every file we changed
+
+`clean_christchurch_panel.Rmd`
+
+- Added a line at the top saying what it reads and saves.
+- Added settings at the top: `price_max` (2000), `knn_k` (10), `long_stay_nights` (30) and `random_seed` (2026). The code now uses these names instead of the numbers.
+- The `9` in `in_all_9_months` is now worked out from the list of months.
+- New checks that stop the code: the input file is missing, a price is still missing after kNN, or a listing appears twice in the same month.
+
+`bond_listing_clean.Rmd`
+
+- Added a line at the top saying what it reads and saves.
+- Changed the laptop path to the repo folder, and made `read_csv` use it too.
+- Changed the output name to `Bond_Data_Quarterly_(cleaned).csv`.
+- Added settings at the top: `national_total_id` (-99), `knn_k` (5) and `random_seed` (2026).
+- New checks that stop the code if an input file is missing.
+- `Location Id` is now read as text.
+
+`join_listings_bonds.Rmd`
+
+- Added a line at the top saying what it reads and saves.
+- The file names are now set once at the top.
+- New checks that stop the code: a month did not get a quarter, an area has two bond totals in the same quarter, or the join changed the number of rows.
+- New section 5, the sanity check example (see below).
+
+`airbnb_vs_rentals.Rmd`
+
+- Added a line at the top saying what it reads and which file to knit first.
+- Added settings at the top: `central_area` ("326600"), `min_listings` (20), `latest_quarter` (April to June 2026) and `days_per_week` (7). The code now uses these names.
+- New check that stops the code if a listing appears twice in the same month.
+
+`get_area_codes.py`
+
+- Added a comment at the top saying what it does, that it needs the API key, and to run it from the repo folder.
+- Added settings at the top: `N_PROCESSES` (20), `TIMEOUT_SECONDS` (15) and `CHECKPOINT_EVERY` (500).
+- It now stops with an error if any listing has no area code. It still saves its file first, so the API calls are not lost.
+
+`README.md`
+
+- Fixed the bond output file name.
+- Added the "Deliverable 6" section with these notes and the sanity check example.
+
+The HTML reports for the cleaning, join and analysis files were re-knitted, so they show the new code. The results in them are the same as before.
+
+
+## Sanity check example (task 3)
+
+Lecture: "Calculate the expected result by hand, for one or more rows. Compare with the computer output".
+
+- Step checked: the join, which gives each Airbnb listing the bond numbers for its area and quarter.
+- Why it needs checking: if the area code or the quarter is matched wrongly, a listing gets another area's rent. Nothing crashes, the numbers are just wrong.
+- How we checked it: we took one Christchurch Central (326600) listing in April 2026. April is in the quarter that starts on 2026-04-01, so the listing should get the 326600 total for that quarter. We looked that row up ourselves in the raw bond report (`Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv`), not in our cleaned file, and compared the two.
+- Result: both show 42 active bonds and a weekly rent of $537, so the join matched the right area and the right quarter.
+- This check is now in section 5 of `join_listings_bonds.Rmd`. If the numbers ever stop matching, the knit stops with an error.
+
+
+## Things we noticed but did not change
+
+- The bond file says it has no duplicate rows, but its own check prints 779. They come from the kNN step that fills missing bed counts. Fixing this would change the data, so we left it for now. It does not affect our answers, because the join only uses area totals that kNN did not fill.
+- The saved bond CSV was made by an older version of `bond_listing_clean.Rmd`, so it is not exactly what the code makes now. We did not re-run it, so the data stays the same as Deliverable 5.
+- `get_area_codes.py` was not re-run, because it needs the API key. We checked that the Python file has no syntax errors.
+- Separate folders for data, code and outputs. The lecture suggests this, but moving files now would break everyone's file paths. The structure we would use is in "Suggested folder structure" below.
+- File names with spaces, like `Christchurch Oct2025 to Jun2026 (cleaned).csv`, for the same reason.
+
+
+## Suggested folder structure
+
+Lecture: "Clean separation of parts: Data, Code, Output" and "Do not edit Data".
+
+Right now every file sits in one folder, so the raw data, the code and the files the code makes are all mixed together. Following the lecture's default project structure, the repo would look like this:
+
+```
+Group-3-DATA201-422-/
+  README.md
+  Deliverable6_changes.md
+  teamrules
+  .gitignore
+
+  data/
+    Christchurch Oct2025 to Jun2026 (combined).csv
+    Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv
+
+  src/
+    1_clean_christchurch_panel.Rmd
+    2_get_area_codes.py
+    3_bond_listing_clean.Rmd
+    4_join_listings_bonds.Rmd
+    5_airbnb_vs_rentals.Rmd
+
+  out/
+    Christchurch Oct2025 to Jun2026 (cleaned).csv
+    Christchurch_with_area_codes.csv
+    Bond_Data_Quarterly_(cleaned).csv
+    Christchurch_with_bonds.csv
+    clean_christchurch_panel.html
+    join_listings_bonds.html
+    airbnb_vs_rentals.html
+```
+
+What each folder is for:
+
+- `data/` holds the files we downloaded. We never edit them by hand. Every change is made by the code, so anyone can see exactly what was done to the original data.
+- `src/` holds the code. The number at the start of each name is the order to run them in, so nobody has to guess which file comes first.
+- `out/` holds everything the code makes: the cleaned files, the joined file and the HTML reports. All of it can be made again by running the code on the data (the lecture's "Data + Code -> Output").
+- The lecture says outputs usually do not go in git. We would still keep `out/` in git, because teammates use these files without running the code, and `Christchurch_with_area_codes.csv` needs an API key to make again.
+
+Why we have not moved the files yet:
+
+- Every file path in the code would change (for example `data/Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv` instead of `Detailed-Quarterly-Tenancy-Q1-2020-Q3-2026.csv`), and every teammate's copy would need updating at the same time. We would do it as one change with the whole team, not in the middle of a deliverable.
