@@ -1,17 +1,23 @@
 ---
 title: "Cleaning and Imputing the Christchurch Airbnb Panel"
-subtitle: "Inside Airbnb listings, October 2025 - June 2026"
+subtitle: "Inside Airbnb listings, every month from October 2025"
 output:
   html_document:
     toc: true
     toc_depth: 2
 ---
 
-Reads `Christchurch Oct2025 to Jun2026 (combined).csv`, cleans it, and saves
-`Christchurch Oct2025 to Jun2026 (cleaned).csv`.
+Reads `output/Christchurch_combined.csv` (made by `combine_months.Rmd`), cleans it, and saves
+`output/Christchurch_cleaned.csv`.
+
+The numbers written in the text are from the October 2025 to June 2026 data
+(Deliverable 4). The tables printed under each chunk are worked out again every time
+this file is knitted, so they include every month in `data/listings/`.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+# this file is in src/, so run its code from the repo folder (one level up)
+knitr::opts_knit$set(root.dir = "..")
 # install once if needed: install.packages(c("dplyr", "tidyr", "readr", "VIM"))
 library(dplyr)
 library(tidyr)
@@ -22,13 +28,13 @@ library(VIM)
 # 1. Read the data
 
 ```{r settings}
-# "." means the folder this Rmd is in (the repo folder), so it works on every computer.
+# "." means the repo folder (set in the setup chunk), so it works on every computer.
 # Knitting, and running chunks in RStudio, both use that folder automatically.
 # Running chunks in VS Code: open the repo folder first (File > Open Folder).
 data_dir <- "."
 
-in_file  <- file.path(data_dir, "Christchurch Oct2025 to Jun2026 (combined).csv")
-out_file <- file.path(data_dir, "Christchurch Oct2025 to Jun2026 (cleaned).csv")
+in_file  <- file.path(data_dir, "output", "Christchurch_combined.csv")
+out_file <- file.path(data_dir, "output", "Christchurch_cleaned.csv")
 
 # cleaning rules
 price_max        <- 2000   # a nightly price above this is an error
@@ -69,22 +75,11 @@ inform anything and only adds noise to the missing-value summary.
 # 3. Month as an ordered factor and a real date
 
 ```{r month}
-month_levels <- c("October 2025", "November 2025", "December 2025",
-                  "January 2026", "February 2026", "March 2026",
-                  "April 2026", "May 2026", "June 2026")
+# month_date is made by combine_months.Rmd, so the months are taken from the data
+# (no list of months here, so a new month needs no change)
+month_levels <- format(sort(unique(airbnb$month_date)), "%B %Y")
 
 airbnb <- airbnb %>%
-  mutate(month_date = case_when(
-    month_year == "October 2025"  ~ as.Date("2025-10-01"),
-    month_year == "November 2025" ~ as.Date("2025-11-01"),
-    month_year == "December 2025" ~ as.Date("2025-12-01"),
-    month_year == "January 2026"  ~ as.Date("2026-01-01"),
-    month_year == "February 2026" ~ as.Date("2026-02-01"),
-    month_year == "March 2026"    ~ as.Date("2026-03-01"),
-    month_year == "April 2026"    ~ as.Date("2026-04-01"),
-    month_year == "May 2026"      ~ as.Date("2026-05-01"),
-    month_year == "June 2026"     ~ as.Date("2026-06-01")
-  )) %>%
   mutate(month_year = factor(month_year, levels = month_levels, ordered = TRUE))
 
 table(airbnb$month_year)
@@ -238,7 +233,7 @@ airbnb <- airbnb %>%
   group_by(id) %>%
   mutate(months_present = n_distinct(month_year)) %>%
   ungroup() %>%
-  mutate(in_all_9_months = months_present == length(month_levels),
+  mutate(in_all_months = months_present == length(month_levels),
          long_stay = minimum_nights_filled >= long_stay_nights,
          name = trimws(name))
 
@@ -247,7 +242,7 @@ table(airbnb$months_present)
 
 **Why this matters.** Only 2,338 of 4,117 listings appear in all nine snapshots, so an
 unbalanced panel mixes real price movement with listings entering and leaving. Any
-month-over-month comparison should either use `in_all_9_months` or state that it does not.
+month-over-month comparison should either use `in_all_months` or state that it does not.
 
 `long_stay` marks the 129 rows requiring 30 or more nights. These are a different market
 to nightly rental and are worth excluding from tourist-price analysis.
