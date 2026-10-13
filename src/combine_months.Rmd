@@ -1,0 +1,81 @@
+---
+title: "Combining the Monthly Airbnb Files"
+subtitle: "Inside Airbnb listings for Christchurch, every month from October 2025"
+output: html_document
+---
+
+Reads every monthly Inside Airbnb file in `data/listings/`, keeps the Christchurch rows,
+and saves them all as one file: `output/Christchurch_combined.csv`.
+
+This does the same job as `Filter CHC.R` and `Combine CHC.R` from Deliverable 3, but with a
+loop, so a new month needs no new code. To add a month, save its `listings.csv` in
+`data/listings/`, named by its scrape date (for example `2026-08-13.csv`), then run `make`.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# this file is in src/, so run its code from the repo folder (one level up)
+knitr::opts_knit$set(root.dir = "..")
+```
+
+# 1. The monthly files
+
+Each file is one month of New Zealand listings. Its name is the date Inside Airbnb collected
+the data (the scrape date), so the files are listed in date order.
+
+```{r files}
+files <- list.files("data/listings", pattern = "\\.csv$", full.names = TRUE)
+
+files
+```
+
+# 2. Read each month and keep Christchurch
+
+The loop goes through the files one at a time. For each month it keeps the Christchurch
+rows, works out the month from the file name, and adds the rows to one table.
+
+```{r combine}
+chch <- NULL   # start with nothing, then add one month at a time
+
+for (f in files) {
+
+  month <- read.csv(f,
+                    na.strings = c("", "NA"),
+                    colClasses = c(id = "character", host_id = "character"))
+
+  month <- subset(month, neighbourhood_group == "Christchurch City")
+
+  # the month comes from the scrape date at the start of the file name
+  scrape_date <- as.Date(substr(basename(f), 1, 10), format = "%Y-%m-%d")
+
+  if (is.na(scrape_date)) {
+    stop("This file is not named by its scrape date, like 2026-08-13.csv: ", f)
+  }
+
+  month$month_year <- format(scrape_date, "%B %Y")
+  month$month_date <- as.Date(format(scrape_date, "%Y-%m-01"))
+
+  chch <- rbind(chch, month)
+}
+```
+
+`id` and `host_id` are read as text, because the ids are too long to store as numbers
+without losing digits. `month_date` is the first day of the month, so later files can sort
+and group by month correctly.
+
+# 3. Check
+
+```{r check}
+# two files from the same month would put every listing in twice
+if (length(unique(chch$month_year)) != length(files)) {
+  stop("Each file in data/listings/ must be a different month")
+}
+
+table(chch$month_date)
+dim(chch)
+```
+
+# 4. Save
+
+```{r save}
+write.csv(chch, "output/Christchurch_combined.csv", row.names = FALSE)
+```
