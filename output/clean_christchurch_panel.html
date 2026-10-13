@@ -350,8 +350,8 @@ display: none;
 
 <h1 class="title toc-ignore">Cleaning and Imputing the Christchurch
 Airbnb Panel</h1>
-<h3 class="subtitle">Inside Airbnb listings, October 2025 - June
-2026</h3>
+<h3 class="subtitle">Inside Airbnb listings, every month from October
+2025</h3>
 
 </div>
 
@@ -387,9 +387,13 @@ limitations</a></li>
 </ul>
 </div>
 
-<p>Reads <code>Christchurch Oct2025 to Jun2026 (combined).csv</code>,
-cleans it, and saves
-<code>Christchurch Oct2025 to Jun2026 (cleaned).csv</code>.</p>
+<p>Reads <code>output/Christchurch_combined.csv</code> (made by
+<code>combine_months.Rmd</code>), cleans it, and saves
+<code>output/Christchurch_cleaned.csv</code>.</p>
+<p>The numbers written in the text are from the October 2025 to June
+2026 data (Deliverable 4). The tables printed under each chunk are
+worked out again every time this file is knitted, so they include every
+month in <code>data/listings/</code>.</p>
 <div id="read-the-data" class="section level1">
 <h1>1. Read the data</h1>
 <pre class="r"><code># &quot;.&quot; means the folder this Rmd is in (the repo folder), so it works on every computer.
@@ -397,8 +401,8 @@ cleans it, and saves
 # Running chunks in VS Code: open the repo folder first (File &gt; Open Folder).
 data_dir &lt;- &quot;.&quot;
 
-in_file  &lt;- file.path(data_dir, &quot;Christchurch Oct2025 to Jun2026 (combined).csv&quot;)
-out_file &lt;- file.path(data_dir, &quot;Christchurch Oct2025 to Jun2026 (cleaned).csv&quot;)
+in_file  &lt;- file.path(data_dir, &quot;output&quot;, &quot;Christchurch_combined.csv&quot;)
+out_file &lt;- file.path(data_dir, &quot;output&quot;, &quot;Christchurch_cleaned.csv&quot;)
 
 # cleaning rules
 price_max        &lt;- 2000   # a nightly price above this is an error
@@ -413,7 +417,7 @@ if (!file.exists(in_file)) stop(&quot;Cannot find the input file: &quot;, in_fil
 )
 
 dim(airbnb)</code></pre>
-<pre><code>## [1] 28795    19</code></pre>
+<pre><code>## [1] 35796    20</code></pre>
 <p><strong>Why character IDs.</strong> The largest <code>id</code> is
 1,709,885,808,209,520,396. A double holds about 15 significant digits,
 so reading these as numbers silently corrupts the last few. They are
@@ -423,7 +427,7 @@ same issue that produced the type mismatch in the KNIME workflow.</p>
 <div id="drop-the-empty-column" class="section level1">
 <h1>2. Drop the empty column</h1>
 <pre class="r"><code>sum(is.na(airbnb$license))</code></pre>
-<pre><code>## [1] 28795</code></pre>
+<pre><code>## [1] 35796</code></pre>
 <pre class="r"><code>airbnb &lt;- airbnb %&gt;% select(-license)</code></pre>
 <p><code>license</code> is <code>NA</code> in all 28,795 rows. A column
 with zero observed values cannot inform anything and only adds noise to
@@ -433,30 +437,21 @@ constant <code>&quot;Christchurch City&quot;</code>,</p>
 </div>
 <div id="month-as-an-ordered-factor-and-a-real-date" class="section level1">
 <h1>3. Month as an ordered factor and a real date</h1>
-<pre class="r"><code>month_levels &lt;- c(&quot;October 2025&quot;, &quot;November 2025&quot;, &quot;December 2025&quot;,
-                  &quot;January 2026&quot;, &quot;February 2026&quot;, &quot;March 2026&quot;,
-                  &quot;April 2026&quot;, &quot;May 2026&quot;, &quot;June 2026&quot;)
+<pre class="r"><code># month_date is made by combine_months.Rmd, so the months are taken from the data
+# (no list of months here, so a new month needs no change)
+month_levels &lt;- format(sort(unique(airbnb$month_date)), &quot;%B %Y&quot;)
 
 airbnb &lt;- airbnb %&gt;%
-  mutate(month_date = case_when(
-    month_year == &quot;October 2025&quot;  ~ as.Date(&quot;2025-10-01&quot;),
-    month_year == &quot;November 2025&quot; ~ as.Date(&quot;2025-11-01&quot;),
-    month_year == &quot;December 2025&quot; ~ as.Date(&quot;2025-12-01&quot;),
-    month_year == &quot;January 2026&quot;  ~ as.Date(&quot;2026-01-01&quot;),
-    month_year == &quot;February 2026&quot; ~ as.Date(&quot;2026-02-01&quot;),
-    month_year == &quot;March 2026&quot;    ~ as.Date(&quot;2026-03-01&quot;),
-    month_year == &quot;April 2026&quot;    ~ as.Date(&quot;2026-04-01&quot;),
-    month_year == &quot;May 2026&quot;      ~ as.Date(&quot;2026-05-01&quot;),
-    month_year == &quot;June 2026&quot;     ~ as.Date(&quot;2026-06-01&quot;)
-  )) %&gt;%
   mutate(month_year = factor(month_year, levels = month_levels, ordered = TRUE))
 
 table(airbnb$month_year)</code></pre>
 <pre><code>## 
 ##  October 2025 November 2025 December 2025  January 2026 February 2026 
 ##          2991          3047          3180          3057          3190 
-##    March 2026    April 2026      May 2026     June 2026 
-##          3227          3273          3361          3469</code></pre>
+##    March 2026    April 2026      May 2026     June 2026     July 2026 
+##          3227          3273          3361          3469          3488 
+##   August 2026 
+##          3513</code></pre>
 <p>As plain text the months sort alphabetically, so every grouped
 summary and every x-axis came out April, August, December, February. The
 ordered factor fixes plotting and grouping; <code>month_date</code>
@@ -466,12 +461,12 @@ allows arithmetic and correct time-series joins.</p>
 <h1>4. Dates</h1>
 <pre class="r"><code>airbnb &lt;- airbnb %&gt;% mutate(last_review = as.Date(last_review))
 range(airbnb$last_review, na.rm = TRUE)</code></pre>
-<pre><code>## [1] &quot;2014-04-14&quot; &quot;2026-06-21&quot;</code></pre>
+<pre><code>## [1] &quot;2014-04-14&quot; &quot;2026-08-13&quot;</code></pre>
 </div>
 <div id="reviews-for-listings-that-have-none" class="section level1">
 <h1>5. Reviews for listings that have none</h1>
 <pre class="r"><code>sum(airbnb$number_of_reviews == 0 &amp; is.na(airbnb$reviews_per_month))</code></pre>
-<pre><code>## [1] 2627</code></pre>
+<pre><code>## [1] 3234</code></pre>
 <pre class="r"><code>airbnb &lt;- airbnb %&gt;%
   mutate(reviews_per_month = ifelse(number_of_reviews == 0, 0, reviews_per_month))</code></pre>
 <p><strong>Why 0 rather than imputation.</strong> All 2,627 missing
@@ -525,18 +520,20 @@ alongside.</p>
   group_by(month_year) %&gt;%
   summarise(rows = n(), price_observed = sum(!is.na(price)),
             pct_missing = round(mean(is.na(price)) * 100, 1))</code></pre>
-<pre><code>## # A tibble: 9 × 4
-##   month_year     rows price_observed pct_missing
-##   &lt;ord&gt;         &lt;int&gt;          &lt;int&gt;       &lt;dbl&gt;
-## 1 October 2025   2991           2821         5.7
-## 2 November 2025  3047           2835         7  
-## 3 December 2025  3180              0       100  
-## 4 January 2026   3057              0       100  
-## 5 February 2026  3190              0       100  
-## 6 March 2026     3227           3059         5.2
-## 7 April 2026     3273           3069         6.2
-## 8 May 2026       3361           3149         6.3
-## 9 June 2026      3469           3195         7.9</code></pre>
+<pre><code>## # A tibble: 11 × 4
+##    month_year     rows price_observed pct_missing
+##    &lt;ord&gt;         &lt;int&gt;          &lt;int&gt;       &lt;dbl&gt;
+##  1 October 2025   2991           2821         5.7
+##  2 November 2025  3047           2835         7  
+##  3 December 2025  3180              0       100  
+##  4 January 2026   3057              0       100  
+##  5 February 2026  3190              0       100  
+##  6 March 2026     3227           3059         5.2
+##  7 April 2026     3273           3069         6.2
+##  8 May 2026       3361           3149         6.3
+##  9 June 2026      3469           3195         7.9
+## 10 July 2026      3488           3173         9  
+## 11 August 2026    3513           3177         9.6</code></pre>
 <p>Two distinct problems:</p>
 <ul>
 <li><strong>December 2025, January 2026 and February 2026 have no prices
@@ -556,8 +553,8 @@ across listings.</li>
 <pre><code>## # A tibble: 2 × 3
 ##   price_missing  rows pct_zero_availability
 ##   &lt;lgl&gt;         &lt;int&gt;                 &lt;dbl&gt;
-## 1 FALSE         18128                   0.5
-## 2 TRUE           1240                  62.1</code></pre>
+## 1 FALSE         24478                   0.4
+## 2 TRUE           1891                  65.8</code></pre>
 <p>Among rows with a price, 0.5% have zero availability. Among rows
 missing a price, 62% do. Inside Airbnb derives price from the booking
 calendar, so a listing with no available nights has no price to
@@ -590,7 +587,7 @@ airbnb &lt;- airbnb %&gt;%
   mutate(price_was_imputed = is.na(price) | price &gt; price_max)
 
 sum(airbnb$price_was_imputed)</code></pre>
-<pre><code>## [1] 10694</code></pre>
+<pre><code>## [1] 11354</code></pre>
 <pre class="r"><code>if (anyNA(airbnb$price_imputed)) stop(&quot;Some prices are still missing after kNN&quot;)</code></pre>
 <p>The original <code>price</code> column is kept unchanged,
 <code>price_imputed</code> holds the filled version, and
@@ -601,18 +598,20 @@ sum(airbnb$price_was_imputed)</code></pre>
             observed = sum(!is.na(price)),
             imputed  = sum(price_was_imputed),
             median_price = round(median(price_imputed), 0))</code></pre>
-<pre><code>## # A tibble: 9 × 5
-##   month_year     rows observed imputed median_price
-##   &lt;ord&gt;         &lt;int&gt;    &lt;int&gt;   &lt;int&gt;        &lt;dbl&gt;
-## 1 October 2025   2991     2821     177          153
-## 2 November 2025  3047     2835     219          164
-## 3 December 2025  3180        0    3180          167
-## 4 January 2026   3057        0    3057          203
-## 5 February 2026  3190        0    3190          244
-## 6 March 2026     3227     3059     172          238
-## 7 April 2026     3273     3069     207          229
-## 8 May 2026       3361     3149     216          215
-## 9 June 2026      3469     3195     276          214</code></pre>
+<pre><code>## # A tibble: 11 × 5
+##    month_year     rows observed imputed median_price
+##    &lt;ord&gt;         &lt;int&gt;    &lt;int&gt;   &lt;int&gt;        &lt;dbl&gt;
+##  1 October 2025   2991     2821     177          153
+##  2 November 2025  3047     2835     219          164
+##  3 December 2025  3180        0    3180          167
+##  4 January 2026   3057        0    3057          203
+##  5 February 2026  3190        0    3190          244
+##  6 March 2026     3227     3059     172          238
+##  7 April 2026     3273     3069     207          229
+##  8 May 2026       3361     3149     216          215
+##  9 June 2026      3469     3195     276          214
+## 10 July 2026      3488     3173     319          227
+## 11 August 2026    3513     3177     341          224</code></pre>
 </div>
 </div>
 <div id="panel-structure-and-remaining-flags" class="section level1">
@@ -621,19 +620,19 @@ sum(airbnb$price_was_imputed)</code></pre>
   group_by(id) %&gt;%
   mutate(months_present = n_distinct(month_year)) %&gt;%
   ungroup() %&gt;%
-  mutate(in_all_9_months = months_present == length(month_levels),
+  mutate(in_all_months = months_present == length(month_levels),
          long_stay = minimum_nights_filled &gt;= long_stay_nights,
          name = trimws(name))
 
 table(airbnb$months_present)</code></pre>
 <pre><code>## 
-##     1     2     3     4     5     6     7     8     9 
-##   215   486   759   996  1080  1224  1393  1600 21042</code></pre>
+##     1     2     3     4     5     6     7     8     9    10    11 
+##   208   328   666   876  1080  1380  1218  1512  1593  1800 25135</code></pre>
 <p><strong>Why this matters.</strong> Only 2,338 of 4,117 listings
 appear in all nine snapshots, so an unbalanced panel mixes real price
 movement with listings entering and leaving. Any month-over-month
-comparison should either use <code>in_all_9_months</code> or state that
-it does not.</p>
+comparison should either use <code>in_all_months</code> or state that it
+does not.</p>
 <p><code>long_stay</code> marks the 129 rows requiring 30 or more
 nights. These are a different market to nightly rental and are worth
 excluding from tourist-price analysis.</p>
@@ -657,11 +656,11 @@ range(airbnb$latitude)</code></pre>
 ##                       latitude                      longitude 
 ##                              0                              0 
 ##                      room_type                          price 
-##                              0                          10667 
+##                              0                          11318 
 ##                 minimum_nights              number_of_reviews 
 ##                             37                              0 
 ##                    last_review              reviews_per_month 
-##                           2627                              0 
+##                           3234                              0 
 ## calculated_host_listings_count               availability_365 
 ##                              0                              0 
 ##          number_of_reviews_ltm                     month_year 
@@ -672,7 +671,7 @@ range(airbnb$latitude)</code></pre>
 ##                              0                              0 
 ##              price_was_imputed                 months_present 
 ##                              0                              0 
-##                in_all_9_months                      long_stay 
+##                  in_all_months                      long_stay 
 ##                              0                              0</code></pre>
 <p>Coordinates fall between -43.87 and -43.42 latitude and 172.43 to
 173.10 longitude, which is Christchurch City including Banks Peninsula.
@@ -695,9 +694,9 @@ computed on <code>price_imputed</code> will be slightly too small.</li>
 write_csv(airbnb, out_file)
 
 out_file</code></pre>
-<pre><code>## [1] &quot;./Christchurch Oct2025 to Jun2026 (cleaned).csv&quot;</code></pre>
+<pre><code>## [1] &quot;./output/Christchurch_cleaned.csv&quot;</code></pre>
 <pre class="r"><code>nrow(airbnb)</code></pre>
-<pre><code>## [1] 28795</code></pre>
+<pre><code>## [1] 35796</code></pre>
 </div>
 
 
