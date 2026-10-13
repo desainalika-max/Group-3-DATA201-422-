@@ -1,5 +1,5 @@
 # Reads the cleaned listings, looks up the Stats NZ area code of every coordinate with the
-# Koordinates API, and saves Christchurch_with_area_codes.csv.
+# Koordinates API, and saves data/Christchurch_with_area_codes.csv.
 # Needs KOORDINATES_API_KEY in a .env file. Run it from the repo folder.
 
 import os
@@ -13,8 +13,8 @@ load_dotenv()
 API_KEY = os.environ["KOORDINATES_API_KEY"]
 LAYER_ID = 123515
 
-INPUT_FILE = "Christchurch Oct2025 to Jun2026 (cleaned).csv"
-OUTPUT_FILE = "Christchurch_with_area_codes.csv"
+INPUT_FILE = "output/Christchurch_cleaned.csv"
+OUTPUT_FILE = "data/Christchurch_with_area_codes.csv"
 
 N_PROCESSES = 20        # how many API calls run at the same time
 TIMEOUT_SECONDS = 15    # give up on one API call after this long
